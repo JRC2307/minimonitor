@@ -1,0 +1,21 @@
+[package]
+name = "minimonitor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+keyring = "4.0.0-rc.3"
+keyring-core = "0.7.2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.37"
+tao = "0.34"
+tiktoken-rs = "0.9"
+tray-icon = { version = "0.21", default-features = false }
+wry = "0.54"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

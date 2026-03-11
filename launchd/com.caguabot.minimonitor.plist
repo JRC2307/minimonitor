@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.caguabot.minimonitor</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/caguabot/Desktop/1/projects/personal/minimonitor/target/release/minimonitor</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/caguabot/Desktop/1/projects/personal/minimonitor</string>
+  <key>StandardOutPath</key>
+  <string>/tmp/minimonitor.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/minimonitor.error.log</string>
+</dict>
+</plist>

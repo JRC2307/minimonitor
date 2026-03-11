@@ -1241,7 +1241,7 @@ mod macos_app {
 
     fn make_tray_icon() -> TrayAppIcon {
         let rgba = make_icon_rgba();
-        TrayAppIcon::from_rgba(rgba, 18, 18).expect("failed to build tray icon")
+        TrayAppIcon::from_rgba(rgba, 64, 64).expect("failed to build tray icon")
     }
 
     fn make_window_icon() -> TaoIcon {

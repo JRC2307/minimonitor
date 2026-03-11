@@ -28,11 +28,12 @@ mod macos_app {
         event::{Event, StartCause, WindowEvent},
         event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
         platform::macos::{ActivationPolicy, EventLoopExtMacOS},
-        window::{Window, WindowBuilder, WindowId},
+        window::{Icon as TaoIcon, Window, WindowBuilder, WindowId},
     };
     use tiktoken_rs::get_bpe_from_model;
     use tray_icon::{
-        MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
+        Icon as TrayAppIcon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder,
+        TrayIconEvent,
         menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     };
     use wry::{WebView, WebViewBuilder, http::Request};
@@ -41,6 +42,8 @@ mod macos_app {
     const NETWORK_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
     const MAX_MENU_PROCESSES: usize = 8;
     const MAX_INSPECTOR_PROCESSES: usize = 200;
+    const MIN_VISIBLE_CPU_PERCENT: f32 = 0.2;
+    const MIN_VISIBLE_MEMORY_BYTES: u64 = 20 * 1024 * 1024;
     const SERVICE_NAME: &str = "com.caguabot.minimonitor";
 
     pub fn run() {
@@ -318,6 +321,7 @@ mod macos_app {
             let tray = TrayIconBuilder::new()
                 .with_title(self.status_title())
                 .with_tooltip("MiniMonitor")
+                .with_icon(make_tray_icon())
                 .with_menu(Box::new(self.build_menu()))
                 .with_menu_on_left_click(true)
                 .build()
@@ -489,7 +493,12 @@ mod macos_app {
         fn build_processes_submenu(&self, snapshot: &MonitorSnapshot) -> Submenu {
             let submenu = Submenu::new("Top processes", true);
 
-            for process in snapshot.processes.iter().take(MAX_MENU_PROCESSES) {
+            for process in snapshot
+                .processes
+                .iter()
+                .filter(|process| is_visible_process(process))
+                .take(MAX_MENU_PROCESSES)
+            {
                 let child = Submenu::with_id(
                     format!("process:{}", process.pid),
                     format!(
@@ -555,7 +564,6 @@ mod macos_app {
                     && button_state == MouseButtonState::Down
                 {
                     self.presentation_snapshot = Some(self.live_snapshot.clone());
-                    self.prepare_tray_menu();
                 }
             }
         }
@@ -691,6 +699,7 @@ mod macos_app {
             let window = WindowBuilder::new()
                 .with_title("MiniMonitor Inspector")
                 .with_inner_size(tao::dpi::LogicalSize::new(1120.0, 760.0))
+                .with_window_icon(Some(make_window_icon()))
                 .build(event_loop_target)
                 .expect("failed to build inspector window");
             window.set_visible(true);
@@ -699,6 +708,7 @@ mod macos_app {
             let proxy = self.proxy.clone();
             let webview = WebViewBuilder::new()
                 .with_html(html)
+                .with_clipboard(true)
                 .with_ipc_handler(move |request: Request<String>| {
                     if let Ok(command) = serde_json::from_str::<InspectorCommand>(request.body()) {
                         let _ = proxy.send_event(UserEvent::Inspector(command));
@@ -743,6 +753,7 @@ mod macos_app {
             let processes = snapshot
                 .processes
                 .iter()
+                .filter(|process| is_visible_process(process))
                 .filter(|process| !self.filter_state.current_user_only || process.current_user)
                 .filter(|process| !self.filter_state.localhost_only || process.localhost)
                 .take(MAX_INSPECTOR_PROCESSES)
@@ -1114,6 +1125,11 @@ mod macos_app {
         }
     }
 
+    fn is_visible_process(process: &ProcessRow) -> bool {
+        process.cpu_percent >= MIN_VISIBLE_CPU_PERCENT
+            || process.memory_bytes >= MIN_VISIBLE_MEMORY_BYTES
+    }
+
     fn format_bytes_pair(used: u64, total: u64) -> String {
         format!("{} / {}", format_bytes(used), format_bytes(total))
     }
@@ -1223,6 +1239,53 @@ mod macos_app {
             .collect()
     }
 
+    fn make_tray_icon() -> TrayAppIcon {
+        let rgba = make_icon_rgba();
+        TrayAppIcon::from_rgba(rgba, 18, 18).expect("failed to build tray icon")
+    }
+
+    fn make_window_icon() -> TaoIcon {
+        let rgba = make_icon_rgba();
+        TaoIcon::from_rgba(rgba, 64, 64).expect("failed to build window icon")
+    }
+
+    fn make_icon_rgba() -> Vec<u8> {
+        let width = 64usize;
+        let height = 64usize;
+        let mut rgba = vec![0; width * height * 4];
+
+        fill_rect(&mut rgba, width, 0, 0, width, height, [12, 16, 20, 255]);
+        fill_rect(&mut rgba, width, 6, 6, 52, 52, [24, 31, 39, 255]);
+
+        let accent = [237, 241, 246, 255];
+        fill_rect(&mut rgba, width, 12, 12, 8, 40, accent);
+        fill_rect(&mut rgba, width, 20, 20, 8, 16, accent);
+        fill_rect(&mut rgba, width, 28, 12, 8, 40, accent);
+
+        fill_rect(&mut rgba, width, 40, 12, 8, 40, accent);
+        fill_rect(&mut rgba, width, 48, 12, 8, 40, accent);
+        fill_rect(&mut rgba, width, 40, 28, 16, 8, accent);
+
+        rgba
+    }
+
+    fn fill_rect(
+        rgba: &mut [u8],
+        width: usize,
+        x: usize,
+        y: usize,
+        rect_width: usize,
+        rect_height: usize,
+        color: [u8; 4],
+    ) {
+        for yy in y..(y + rect_height) {
+            for xx in x..(x + rect_width) {
+                let index = (yy * width + xx) * 4;
+                rgba[index..index + 4].copy_from_slice(&color);
+            }
+        }
+    }
+
     fn inspector_shell_html() -> &'static str {
         r#"<!doctype html>
 <html>
@@ -1231,24 +1294,28 @@ mod macos_app {
   <title>MiniMonitor Inspector</title>
   <style>
     :root { color-scheme: dark; --bg:#0d1014; --panel:#151a20; --line:#27313b; --text:#edf1f6; --muted:#9aa8b9; --good:#55c27b; --warm:#ffb86c; --bad:#ff6b6b; }
-    body { margin:0; font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; background:radial-gradient(circle at top,#1d2630 0%, #0d1014 55%); color:var(--text); }
-    .app { padding:18px; display:grid; gap:14px; }
-    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .panel { background:rgba(21,26,32,.92); border:1px solid var(--line); border-radius:14px; padding:14px; box-shadow:0 10px 30px rgba(0,0,0,.18); }
-    input, textarea, select, button { background:#0f1419; color:var(--text); border:1px solid #32404e; border-radius:10px; padding:8px 10px; font:inherit; }
-    textarea { width:100%; min-height:120px; }
+    body { margin:0; font:12px/1.32 ui-monospace,SFMono-Regular,Menlo,monospace; background:radial-gradient(circle at top,#1d2630 0%, #0d1014 55%); color:var(--text); }
+    .app { padding:12px; display:grid; gap:10px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .panel { background:rgba(21,26,32,.94); border:1px solid var(--line); border-radius:12px; padding:10px; box-shadow:0 8px 24px rgba(0,0,0,.16); }
+    input, textarea, select, button { background:#0f1419; color:var(--text); border:1px solid #32404e; border-radius:8px; padding:6px 8px; font:inherit; }
+    textarea { width:100%; min-height:92px; resize:vertical; }
     button { cursor:pointer; }
     button.danger { border-color:#6a3434; color:#ff9e9e; }
-    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
-    .stat { background:#0f1419; border:1px solid #24303b; border-radius:12px; padding:10px; }
-    .label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
-    .value { font-size:18px; margin-top:4px; }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+    .stat { background:#0f1419; border:1px solid #24303b; border-radius:10px; padding:8px; }
+    .label { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+    .value { font-size:15px; margin-top:3px; }
     .muted { color:var(--muted); }
     table { width:100%; border-collapse:collapse; }
-    th, td { text-align:left; padding:8px 6px; border-bottom:1px solid #1f2831; vertical-align:top; }
-    th { color:var(--muted); font-size:11px; text-transform:uppercase; }
-    .pill { display:inline-block; padding:2px 7px; border-radius:999px; border:1px solid #354556; color:var(--muted); font-size:11px; margin-right:6px; }
-    .split { display:grid; grid-template-columns:1.4fr .9fr; gap:14px; }
+    th, td { text-align:left; padding:6px 5px; border-bottom:1px solid #1f2831; vertical-align:top; }
+    th { color:var(--muted); font-size:10px; text-transform:uppercase; }
+    .pill { display:inline-block; padding:1px 6px; border-radius:999px; border:1px solid #354556; color:var(--muted); font-size:10px; margin-right:4px; }
+    .split { display:grid; grid-template-columns:1.55fr .85fr; gap:10px; }
+    .proc-main { font-size:12px; line-height:1.25; }
+    .tight { gap:6px; }
+    .token-actions { justify-content:space-between; }
+    .token-actions .row { gap:6px; }
   </style>
 </head>
 <body>
@@ -1256,7 +1323,7 @@ mod macos_app {
     <div class="row">
       <button onclick="send({type:'refresh'})">Refresh Snapshot</button>
       <button onclick="send({type:'close'})">Hide Inspector</button>
-      <input id="search" placeholder="Search pid or process" style="min-width:260px" oninput="render()" />
+      <input id="search" placeholder="Search pid or process" style="min-width:220px" oninput="render()" />
       <label class="muted"><input id="current-user" type="checkbox" checked onchange="render()" /> current user</label>
       <label class="muted"><input id="localhost-only" type="checkbox" onchange="render()" /> localhost only</label>
       <select id="sort" onchange="send({type:'set-sort', value:this.value})"><option value="CPU">CPU</option><option value="RAM">RAM</option></select>
@@ -1264,7 +1331,7 @@ mod macos_app {
     <div id="stats" class="stats"></div>
     <div class="split">
       <div class="panel">
-        <div class="row" style="justify-content:space-between"><strong>Processes</strong><span id="capture" class="muted"></span></div>
+        <div class="row tight" style="justify-content:space-between"><strong>Processes</strong><span id="capture" class="muted"></span></div>
         <table>
           <thead><tr><th>Process</th><th>PID</th><th>CPU</th><th>RAM</th><th>Flags</th><th></th></tr></thead>
           <tbody id="process-rows"></tbody>
@@ -1274,9 +1341,15 @@ mod macos_app {
         <div class="panel"><strong>AI Workloads</strong><div id="ai-workloads" class="muted" style="margin-top:10px"></div></div>
         <div class="panel">
           <strong>Token Checker</strong>
-          <div class="row" style="margin-top:10px">
-            <select id="token-model"><option>gpt-4o-mini</option><option>gpt-4o</option><option>claude-3-5-sonnet-latest</option><option>claude-3-7-sonnet-latest</option></select>
-            <button onclick="estimateTokens()">Estimate</button>
+          <div class="row token-actions" style="margin-top:10px">
+            <div class="row">
+              <select id="token-model"><option>gpt-4o-mini</option><option>gpt-4o</option><option>claude-3-5-sonnet-latest</option><option>claude-3-7-sonnet-latest</option></select>
+              <button onclick="estimateTokens()">Estimate</button>
+            </div>
+            <div class="row">
+              <button onclick="pasteTokens()">Paste</button>
+              <button onclick="clearTokens()">Clear</button>
+            </div>
           </div>
           <textarea id="token-input" placeholder="Paste prompt, log, or copied process text"></textarea>
           <div id="token-result" class="muted"></div>
@@ -1296,6 +1369,24 @@ mod macos_app {
     const state = { data: null };
     function send(payload){ window.ipc.postMessage(JSON.stringify(payload)); }
     function estimateTokens(){ send({ type:'estimate-tokens', model:document.getElementById('token-model').value, text:document.getElementById('token-input').value }); }
+    async function pasteTokens(){
+      const input = document.getElementById('token-input');
+      input.focus();
+      try {
+        if(navigator.clipboard?.readText){
+          const text = await navigator.clipboard.readText();
+          if(text){
+            input.value = text;
+          }
+          return;
+        }
+      } catch (_) {}
+    }
+    function clearTokens(){
+      const input = document.getElementById('token-input');
+      input.value = '';
+      input.focus();
+    }
     function saveProvider(provider){
       const input = document.getElementById(`provider-${provider}`);
       send({ type:'set-provider-key', provider, key: input.value });
@@ -1318,17 +1409,17 @@ mod macos_app {
       const q = document.getElementById('search').value.toLowerCase();
       const userOnly = document.getElementById('current-user').checked;
       const localhostOnly = document.getElementById('localhost-only').checked;
-      const rows = state.data.processes.filter(p => (!userOnly || p.current_user) && (!localhostOnly || p.localhost) && (!q || p.name.toLowerCase().includes(q) || String(p.pid).includes(q) || p.command.toLowerCase().includes(q)));
+      const rows = state.data.processes.filter(p => (!userOnly || p.current_user) && (!localhostOnly || p.localhost) && (!q || p.name.toLowerCase().includes(q) || String(p.pid).includes(q)));
       document.getElementById('process-rows').innerHTML = rows.map(p => `
         <tr>
-          <td><div>${escapeHtml(p.name)}</div><div class="muted">${escapeHtml(p.command || '')}</div></td>
+          <td><div class="proc-main">${escapeHtml(compactName(p.name))}</div></td>
           <td>${p.pid}</td>
           <td>${p.cpu_percent.toFixed(1)}%</td>
           <td>${escapeHtml(formatBytes(p.memory_bytes))}</td>
           <td>${p.current_user ? '<span class="pill">user</span>' : ''}${p.localhost ? '<span class="pill">localhost</span>' : ''}${p.ai_label ? `<span class="pill">${escapeHtml(p.ai_label)}</span>` : ''}</td>
           <td><button class="danger" onclick="if(confirm('Kill PID '+${p.pid}+'?')) send({type:'kill', pid:${p.pid}})">Kill</button></td>
         </tr>`).join('');
-      document.getElementById('ai-workloads').innerHTML = (state.data.ai_workloads.length ? state.data.ai_workloads.map(w => `<div style="margin-bottom:10px"><strong>${escapeHtml(w.label)}</strong><div class="muted">${escapeHtml(w.category)} · ${w.process_count} proc · ${w.total_cpu_percent.toFixed(0)}% CPU · ${escapeHtml(formatBytes(w.total_memory_bytes))}</div><div class="muted">${escapeHtml(w.example_command)}</div></div>`).join('') : 'No inferred AI workloads');
+      document.getElementById('ai-workloads').innerHTML = (state.data.ai_workloads.length ? state.data.ai_workloads.map(w => `<div style="margin-bottom:10px"><strong>${escapeHtml(w.label)}</strong><div class="muted">${escapeHtml(w.category)} · ${w.process_count} proc · ${w.total_cpu_percent.toFixed(0)}% CPU · ${escapeHtml(formatBytes(w.total_memory_bytes))}</div></div>`).join('') : 'No inferred AI workloads');
       document.getElementById('providers').innerHTML = state.data.providers.map(p => `
         <div style="margin-bottom:12px">
           <div><strong>${escapeHtml(p.provider)}</strong> <span class="muted">${escapeHtml(p.status)}</span></div>
@@ -1346,6 +1437,9 @@ mod macos_app {
       const units=['B','KB','MB','GB','TB']; let value=bytes; let i=0;
       while(value >= 1024 && i < units.length - 1){ value /= 1024; i++; }
       return i === 0 ? `${value} ${units[i]}` : `${value.toFixed(1)} ${units[i]}`;
+    }
+    function compactName(value){
+      return value.length > 22 ? value.slice(0, 21) + '…' : value;
     }
     window.updateFromRust = function(next){ state.data = next; render(); };
   </script>

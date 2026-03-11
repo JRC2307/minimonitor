@@ -7,7 +7,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/caguabot/Desktop/1/projects/personal/minimonitor/target/release/minimonitor</string>
+    <string>/Users/caguabot/Applications/MiniMonitor/bin/minimonitor</string>
   </array>
 
   <key>RunAtLoad</key>
@@ -17,7 +17,7 @@
   <true/>
 
   <key>WorkingDirectory</key>
-  <string>/Users/caguabot/Desktop/1/projects/personal/minimonitor</string>
+  <string>/Users/caguabot/Applications/MiniMonitor</string>
   <key>StandardOutPath</key>
   <string>/tmp/minimonitor.log</string>
   <key>StandardErrorPath</key>

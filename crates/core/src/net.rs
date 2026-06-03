@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::HashMap;
 
 #[derive(Clone, Serialize, PartialEq, Debug)]
 pub struct PortRow {
@@ -39,6 +40,35 @@ pub fn listening_ports() -> Vec<PortRow> {
     parse_listen_output(&String::from_utf8_lossy(&out.stdout))
 }
 
+#[derive(Clone, Serialize, PartialEq, Debug)]
+pub struct ConnGroup {
+    pub process: String,
+    pub pid: u32,
+    pub count: usize,
+}
+
+pub fn parse_estab_output(output: &str) -> Vec<ConnGroup> {
+    let mut counts: HashMap<(String, u32), usize> = HashMap::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 9 {
+            continue;
+        }
+        let Ok(pid) = parts[1].parse::<u32>() else { continue };
+        *counts.entry((parts[0].to_owned(), pid)).or_insert(0) += 1;
+    }
+    counts.into_iter()
+        .map(|((process, pid), count)| ConnGroup { process, pid, count })
+        .collect()
+}
+
+pub fn established_connections() -> Vec<ConnGroup> {
+    let Ok(out) = Command::new("lsof").args(["-nP", "-iTCP", "-sTCP:ESTABLISHED"]).output() else {
+        return Vec::new();
+    };
+    parse_estab_output(&String::from_utf8_lossy(&out.stdout))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +105,18 @@ mod tests {
         let rows = parse_listen_output(out);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].port, 3000);
+    }
+
+    #[test]
+    fn groups_established_by_process() {
+        let out = "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n\
+            firefox 700 me 50u IPv4 0x1 0t0 TCP 192.168.1.5:54321->1.1.1.1:443 (ESTABLISHED)\n\
+            firefox 700 me 51u IPv4 0x2 0t0 TCP 192.168.1.5:54322->1.1.1.2:443 (ESTABLISHED)\n\
+            claude  900 me 10u IPv4 0x3 0t0 TCP 192.168.1.5:54400->2.2.2.2:443 (ESTABLISHED)\n";
+        let mut groups = parse_estab_output(out);
+        groups.sort_by(|a, b| b.count.cmp(&a.count));
+        assert_eq!(groups.len(), 2);
+        assert_eq!((groups[0].process.as_str(), groups[0].pid, groups[0].count), ("firefox", 700, 2));
+        assert_eq!((groups[1].process.as_str(), groups[1].count), ("claude", 1));
     }
 }

@@ -69,6 +69,31 @@ pub fn established_connections() -> Vec<ConnGroup> {
     parse_estab_output(&String::from_utf8_lossy(&out.stdout))
 }
 
+#[derive(Clone, Serialize, Default, PartialEq, Debug)]
+pub struct NetIdentity {
+    pub hostname: String,
+    pub lan_ip: Option<String>,
+    pub tailnet_ip: Option<String>,
+}
+
+fn first_line(cmd: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new(cmd).args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+pub fn network_identity(hostname: String) -> NetIdentity {
+    NetIdentity {
+        hostname,
+        lan_ip: first_line("ipconfig", &["getifaddr", "en0"]),
+        tailnet_ip: first_line("tailscale", &["ip", "-4"])
+            .and_then(|s| s.lines().next().map(|l| l.to_owned())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

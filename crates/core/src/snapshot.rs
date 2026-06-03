@@ -64,6 +64,9 @@ pub struct MonitorSnapshot {
     pub net_tx_bps: u64,
     pub disk_read_bps: u64,
     pub disk_write_bps: u64,
+    pub ports: Vec<crate::net::PortRow>,
+    pub connections: Vec<crate::net::ConnGroup>,
+    pub identity: crate::net::NetIdentity,
     pub ai_snapshot: AiSnapshot,
     pub processes: Vec<ProcessRow>,
     pub sort_mode: SortMode,
@@ -77,6 +80,9 @@ pub struct Sampler {
     last_sample: Option<Instant>,
     localhost_pids: HashSet<u32>,
     last_localhost: Instant,
+    ports: Vec<crate::net::PortRow>,
+    connections: Vec<crate::net::ConnGroup>,
+    identity: crate::net::NetIdentity,
 }
 
 impl Sampler {
@@ -95,6 +101,11 @@ impl Sampler {
             last_sample: None,
             localhost_pids: collect_localhost_pids(),
             last_localhost: Instant::now(),
+            ports: crate::net::listening_ports(),
+            connections: crate::net::established_connections(),
+            identity: crate::net::network_identity(
+                System::host_name().unwrap_or_default(),
+            ),
         }
     }
 
@@ -109,6 +120,11 @@ impl Sampler {
         if now.duration_since(self.last_localhost) >= LOCALHOST_REFRESH {
             self.localhost_pids = collect_localhost_pids();
             self.users.refresh();
+            self.ports = crate::net::listening_ports();
+            self.connections = crate::net::established_connections();
+            self.identity = crate::net::network_identity(
+                System::host_name().unwrap_or_default(),
+            );
             self.last_localhost = now;
         }
 
@@ -217,6 +233,9 @@ impl Sampler {
             net_tx_bps,
             disk_read_bps,
             disk_write_bps,
+            ports: self.ports.clone(),
+            connections: self.connections.clone(),
+            identity: self.identity.clone(),
             ai_snapshot,
             processes,
             sort_mode,

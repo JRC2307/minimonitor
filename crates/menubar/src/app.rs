@@ -85,6 +85,7 @@ struct AppState {
     status_message: Option<String>,
     inspector: Option<InspectorWindow>,
     filters: FilterState,
+    caffeinate: crate::actions::Caffeinate,
 }
 
 impl AppState {
@@ -101,6 +102,7 @@ impl AppState {
             status_message: None,
             inspector: None,
             filters: FilterState::default(),
+            caffeinate: crate::actions::Caffeinate::new(),
         }
     }
 
@@ -185,6 +187,17 @@ impl AppState {
                 self.status_message = Some("Sorting by RAM".to_owned());
             }
             "quit" => std::process::exit(0),
+            "action:caffeinate" => {
+                let on = self.caffeinate.set(!self.caffeinate.is_on());
+                self.status_message = Some(
+                    if on { "Keep-awake ON (caffeinate)" } else { "Keep-awake OFF" }.to_owned());
+            }
+            "action:flush-dns" => {
+                self.status_message = Some(match crate::actions::flush_dns() {
+                    Ok(()) => "Flushed DNS cache".to_owned(),
+                    Err(e) => format!("Flush DNS failed: {e}"),
+                });
+            }
             _ if id.starts_with("kill:") => {
                 if let Some(pid) = tray::parse_pid_suffix(id, "kill:") {
                     self.kill(pid);

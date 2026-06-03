@@ -2513,6 +2513,7 @@ version = "0.2.0"
 dependencies = [
  "keyring",
  "keyring-core",
+ "minimonitor-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -2521,6 +2522,15 @@ dependencies = [
  "tiktoken-rs",
  "tray-icon",
  "wry",
+]
+
+[[package]]
+name = "minimonitor-core"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sysinfo",
 ]
 
 [[package]]

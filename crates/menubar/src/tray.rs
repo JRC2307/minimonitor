@@ -3,7 +3,7 @@ use tray_icon::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
 };
 
-use crate::snapshot::{MonitorSnapshot, SortMode, is_visible};
+use minimonitor_core::snapshot::{MonitorSnapshot, SortMode, is_visible};
 use crate::util::{
     format_bytes, format_bytes_pair, format_rate, make_tray_icon, slugify, truncate_name,
 };

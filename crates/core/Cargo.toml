@@ -1,0 +1,9 @@
+[package]
+name = "minimonitor-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }

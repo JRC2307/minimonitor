@@ -8,7 +8,8 @@ use wry::{WebView, WebViewBuilder, http::Request};
 
 use minimonitor_core::ai::AiWorkload;
 use crate::app::UserEvent;
-use minimonitor_core::snapshot::{CoreUsage, MonitorSnapshot, ProcessRow, is_visible};
+use minimonitor_core::net::{ConnGroup, PortRow};
+use minimonitor_core::snapshot::{CoreUsage, DiskVolume, MonitorSnapshot, ProcessRow, is_visible};
 use crate::util::{format_bytes_pair, format_rate, make_window_icon, percentage};
 
 const MAX_INSPECTOR_PROCESSES: usize = 200;
@@ -40,6 +41,8 @@ pub enum InspectorCommand {
     Close,
     Kill { pid: u32 },
     SetSort { value: String },
+    ActionCaffeinate,
+    ActionFlushDns,
 }
 
 #[derive(Serialize)]
@@ -49,6 +52,9 @@ pub struct InspectorView {
     pub processes: Vec<ProcessRow>,
     pub ai_workloads: Vec<AiWorkload>,
     pub cores: Vec<CoreUsage>,
+    pub ports: Vec<PortRow>,
+    pub connections: Vec<ConnGroup>,
+    pub disks: Vec<DiskVolume>,
     pub status_message: Option<String>,
     pub captured_at: String,
 }
@@ -66,6 +72,10 @@ pub struct SummaryView {
     pub net_tx: String,
     pub disk_read: String,
     pub disk_write: String,
+    pub uptime_secs: u64,
+    pub hostname: String,
+    pub lan_ip: Option<String>,
+    pub tailnet_ip: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -136,6 +146,10 @@ pub fn build_view(
             net_tx: format_rate(snapshot.net_tx_bps),
             disk_read: format_rate(snapshot.disk_read_bps),
             disk_write: format_rate(snapshot.disk_write_bps),
+            uptime_secs: snapshot.uptime_secs,
+            hostname: snapshot.identity.hostname.clone(),
+            lan_ip: snapshot.identity.lan_ip.clone(),
+            tailnet_ip: snapshot.identity.tailnet_ip.clone(),
         },
         filters: FilterView {
             current_user_only: filters.current_user_only,
@@ -145,6 +159,9 @@ pub fn build_view(
         processes,
         ai_workloads: snapshot.ai_snapshot.top_workloads.clone(),
         cores: snapshot.cores.clone(),
+        ports: snapshot.ports.clone(),
+        connections: snapshot.connections.clone(),
+        disks: snapshot.disks.clone(),
         status_message,
         captured_at: snapshot.captured_at.clone(),
     }

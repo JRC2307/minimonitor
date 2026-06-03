@@ -26,6 +26,7 @@ const LOCALHOST_REFRESH: Duration = Duration::from_secs(10);
 pub enum SortMode {
     Cpu,
     Memory,
+    Energy,
 }
 
 impl SortMode {
@@ -33,6 +34,7 @@ impl SortMode {
         match self {
             Self::Cpu => "CPU",
             Self::Memory => "RAM",
+            Self::Energy => "Energy",
         }
     }
 }
@@ -256,6 +258,12 @@ impl Sampler {
                         .partial_cmp(&a.cpu_percent)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
+            }),
+            SortMode::Energy => processes.sort_by(|a, b| {
+                b.sustained_cpu
+                    .partial_cmp(&a.sustained_cpu)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| b.memory_bytes.cmp(&a.memory_bytes))
             }),
         }
 

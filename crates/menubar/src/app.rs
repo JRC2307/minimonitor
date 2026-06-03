@@ -231,13 +231,24 @@ impl AppState {
                 self.presentation = Some(self.live.clone());
             }
             InspectorCommand::SetSort { value } => {
-                self.sort_mode = if value.eq_ignore_ascii_case("ram") {
-                    SortMode::Memory
-                } else {
-                    SortMode::Cpu
+                self.sort_mode = match value.to_ascii_lowercase().as_str() {
+                    "ram" => SortMode::Memory,
+                    "energy" => SortMode::Energy,
+                    _ => SortMode::Cpu,
                 };
                 self.refresh_live();
                 self.presentation = Some(self.live.clone());
+            }
+            InspectorCommand::ActionCaffeinate => {
+                let on = self.caffeinate.set(!self.caffeinate.is_on());
+                self.status_message = Some(
+                    if on { "Keep-awake ON (caffeinate)" } else { "Keep-awake OFF" }.to_owned());
+            }
+            InspectorCommand::ActionFlushDns => {
+                self.status_message = Some(match crate::actions::flush_dns() {
+                    Ok(()) => "Flushed DNS cache".to_owned(),
+                    Err(e) => format!("Flush DNS failed: {e}"),
+                });
             }
         }
 

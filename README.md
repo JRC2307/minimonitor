@@ -1,74 +1,27 @@
 # MiniMonitor
 
-Minimal macOS menu bar activity monitor in Rust.
+Lean macOS menu-bar system monitor + a cross-platform collection core and a
+headless agent — the seed of a lightweight fleet control center.
 
-## What it does
-
-- Lives in the macOS status bar instead of staying pinned on screen
-- Shows live summary text like `23%C 52%R 14%G AI2`
-- Tray menu surfaces CPU, RAM, Swap, GPU, load average, network and disk throughput, AI workload totals
-- Inspector window adds per-core CPU bars, process table, AI workloads, token checker, provider keys
-- Hides background noise under `0.2%` CPU and `20 MB` RAM so the list stays minimal
-- Infers likely AI runtimes and agent tools from local process names and command lines
-- Estimates tokens locally for pasted text without sign-in
-- Lets you store OpenAI and Anthropic API keys in macOS Keychain and validate connectivity
-- One-click kill from the inspector (with a browser `confirm()` guard) and from the tray submenu
-- Uses a generated `MM` app/tray icon
+## Workspace
+- `crates/core` — cross-platform collection library (`sysinfo` + macOS `lsof`/`ioreg`).
+- `crates/agent` — headless; serves `GET /snapshot` (JSON) on `127.0.0.1:9909`.
+- `crates/menubar` — macOS tray + inspector (links `core`, samples in-process).
 
 ## Run
-
 ```bash
-cargo run
+cargo run -p minimonitor          # menu-bar app (macOS)
+cargo run -p minimonitor-agent    # headless server on :9909
+cargo run -p minimonitor-agent -- --once   # one JSON snapshot to stdout
 ```
 
-## Build release
+## What it shows
+Tray: 3-line header (CPU/RAM/GPU · Net/Disk · Load/Uptime), Listening ports
+(port→process, kill the owner), Top processes, AI workloads, Quick actions
+(keep-awake via caffeinate, flush DNS). Inspector adds per-core CPU, a process
+table with sustained-CPU/energy sort, listening ports, disk-volume capacity,
+established-connection counts, and network identity (host/LAN/tailnet).
 
-```bash
-cargo build --release
-```
-
-## Install for login startup
-
-This installs the compiled binary into a stable user app path and loads a LaunchAgent:
-
-```bash
-./scripts/install.sh
-```
-
-Installed paths:
-
-- Binary: `~/Applications/MiniMonitor/bin/minimonitor`
-- LaunchAgent: `~/Library/LaunchAgents/com.caguabot.minimonitor.plist`
-
-## Inspector
-
-Use the tray menu item `Show Inspector` to open the richer window.
-
-The inspector:
-
-- Freezes on a snapshot until you manually refresh it
-- Lets you search by process name or PID
-- Highlights current-user and localhost listener processes
-- Shows inferred AI workloads separately from the raw process list
-- Includes a manual token checker panel
-- Includes provider key management for OpenAI and Anthropic
-- Keeps the process table compact by hiding full command text
-
-## Token checker
-
-- Local estimation does not require sign-in
-- OpenAI models use an OpenAI-compatible tokenizer when available
-- Claude/Anthropic estimates are heuristic in v1
-- The token input includes `Paste` and `Clear` controls for quick reuse
-- Provider validation requires an API key stored in Keychain
-- Provider usage/quota totals are not available in v1, so validation currently reports connectivity only
-
-## Run at login
-
-Preferred path:
-
-```bash
-./scripts/install.sh
-```
-
-The checked-in `launchd/com.caguabot.minimonitor.plist` is the reference template and already points at the stable install location under `~/Applications/MiniMonitor/`.
+## Roadmap
+A fleet hub (scrape/store/dashboard) is deferred pending a build-vs-buy spike of
+Beszel + Uptime-Kuma. See `docs/superpowers/specs/2026-06-03-*`.

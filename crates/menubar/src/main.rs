@@ -6,15 +6,11 @@ fn main() {
 }
 
 #[cfg(target_os = "macos")]
-mod ai;
-#[cfg(target_os = "macos")]
 mod app;
 #[cfg(target_os = "macos")]
 mod inspector;
 #[cfg(target_os = "macos")]
 mod services;
-#[cfg(target_os = "macos")]
-mod snapshot;
 #[cfg(target_os = "macos")]
 mod tray;
 #[cfg(target_os = "macos")]

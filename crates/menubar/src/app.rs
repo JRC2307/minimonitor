@@ -14,7 +14,7 @@ use tray_icon::{
 
 use crate::inspector::{self, FilterState, InspectorCommand, InspectorWindow};
 use crate::services::{self, TokenEstimateResult};
-use crate::snapshot::{MonitorSnapshot, Sampler, SortMode};
+use minimonitor_core::snapshot::{MonitorSnapshot, Sampler, SortMode};
 use crate::tray;
 use crate::util::percentage;
 

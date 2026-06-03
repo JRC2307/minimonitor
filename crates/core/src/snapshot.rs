@@ -14,7 +14,8 @@ const MIN_VISIBLE_CPU_PERCENT: f32 = 0.2;
 const MIN_VISIBLE_MEMORY_BYTES: u64 = 20 * 1024 * 1024;
 const LOCALHOST_REFRESH: Duration = Duration::from_secs(10);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SortMode {
     Cpu,
     Memory,
@@ -49,7 +50,7 @@ pub struct CoreUsage {
     pub percent: f32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct MonitorSnapshot {
     pub total_memory_bytes: u64,
     pub used_memory_bytes: u64,

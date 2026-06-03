@@ -5,15 +5,14 @@ Minimal macOS menu bar activity monitor in Rust.
 ## What it does
 
 - Lives in the macOS status bar instead of staying pinned on screen
-- Shows live summary text like `52% RAM 23% CPU AI2`
-- Opens a native tray menu with snapshot-based process and AI workload summaries
-- Opens an on-demand inspector window with search, process details, localhost filtering, and token tools
+- Shows live summary text like `23%C 52%R 14%G AI2`
+- Tray menu surfaces CPU, RAM, Swap, GPU, load average, network and disk throughput, AI workload totals
+- Inspector window adds per-core CPU bars, process table, AI workloads, token checker, provider keys
 - Hides background noise under `0.2%` CPU and `20 MB` RAM so the list stays minimal
 - Infers likely AI runtimes and agent tools from local process names and command lines
 - Estimates tokens locally for pasted text without sign-in
-- Supports `Cmd+V` into the token field and includes explicit `Paste` and `Clear` controls
 - Lets you store OpenAI and Anthropic API keys in macOS Keychain and validate connectivity
-- Uses a confirmation step before killing any process
+- One-click kill from the inspector (with a browser `confirm()` guard) and from the tray submenu
 - Uses a generated `MM` app/tray icon
 
 ## Run

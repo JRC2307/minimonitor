@@ -1,0 +1,217 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>MiniMonitor Inspector</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg:#0d1014; --panel:#151a20; --line:#27313b;
+      --text:#edf1f6; --muted:#9aa8b9;
+      --ok:#55c27b; --warn:#ffb86c; --bad:#ff6b6b;
+      --accent:#6aa9ff;
+    }
+    body { margin:0; font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;
+      background:radial-gradient(circle at top,#1d2630 0%,#0d1014 55%); color:var(--text); }
+    .app { padding:12px; display:grid; gap:10px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .panel { background:rgba(21,26,32,.94); border:1px solid var(--line); border-radius:12px;
+      padding:10px; box-shadow:0 8px 24px rgba(0,0,0,.16); }
+    input, textarea, select, button { background:#0f1419; color:var(--text);
+      border:1px solid #32404e; border-radius:8px; padding:6px 8px; font:inherit; }
+    textarea { width:100%; min-height:80px; resize:vertical; }
+    button { cursor:pointer; }
+    button.danger { border-color:#6a3434; color:#ff9e9e; }
+    .stats { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }
+    .stat { background:#0f1419; border:1px solid #24303b; border-radius:10px; padding:8px;
+      position:relative; overflow:hidden; }
+    .stat .fill { position:absolute; bottom:0; left:0; height:3px; background:var(--accent); opacity:.75; }
+    .label { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+    .value { font-size:15px; margin-top:3px; font-weight:500; }
+    .sub { color:var(--muted); font-size:10px; margin-top:2px; }
+    .muted { color:var(--muted); }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:5px 6px; border-bottom:1px solid #1f2831; vertical-align:middle; }
+    th { color:var(--muted); font-size:10px; text-transform:uppercase; }
+    .pill { display:inline-block; padding:1px 6px; border-radius:999px; border:1px solid #354556;
+      color:var(--muted); font-size:10px; margin-right:4px; }
+    .split { display:grid; grid-template-columns:1.6fr .95fr; gap:10px; }
+    .cores { display:grid; grid-template-columns:repeat(auto-fill,minmax(88px,1fr)); gap:4px; margin-top:8px; }
+    .core { background:#0f1419; border:1px solid #24303b; border-radius:6px; padding:4px 6px;
+      font-size:10px; position:relative; overflow:hidden; }
+    .core .bar { position:absolute; top:0; bottom:0; left:0;
+      background:linear-gradient(90deg,rgba(106,169,255,.25),rgba(85,194,123,.35)); }
+    .core .tag { position:relative; z-index:1; display:flex; justify-content:space-between; }
+    .scroll { max-height:440px; overflow:auto; }
+    .proc-name { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    h3 { margin:0 0 8px 0; font-size:12px; letter-spacing:.04em; }
+    .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+    .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad { background:var(--bad); }
+    .tr-hl:hover { background:rgba(106,169,255,.05); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="row">
+      <button onclick="send({type:'refresh'})">Refresh</button>
+      <button onclick="send({type:'close'})">Hide</button>
+      <input id="search" placeholder="Search pid or name" style="min-width:220px" oninput="render()" />
+      <label class="muted"><input id="current-user" type="checkbox" checked onchange="render()" /> me only</label>
+      <label class="muted"><input id="localhost-only" type="checkbox" onchange="render()" /> localhost</label>
+      <select id="sort" onchange="send({type:'set-sort', value:this.value})">
+        <option value="CPU">CPU</option><option value="RAM">RAM</option>
+      </select>
+      <span id="capture" class="muted" style="margin-left:auto"></span>
+    </div>
+    <div id="stats" class="stats"></div>
+    <div class="panel">
+      <h3>Per-core CPU</h3>
+      <div id="cores" class="cores"></div>
+    </div>
+    <div class="split">
+      <div class="panel">
+        <h3>Processes</h3>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Process</th><th>PID</th><th>CPU</th><th>RAM</th><th>User</th><th>Flags</th><th></th></tr></thead>
+            <tbody id="process-rows"></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="display:grid; gap:10px;">
+        <div class="panel"><h3>AI Workloads</h3><div id="ai-workloads" class="muted"></div></div>
+        <div class="panel">
+          <h3>Token Checker</h3>
+          <div class="row" style="justify-content:space-between">
+            <div class="row">
+              <select id="token-model">
+                <option>gpt-4o-mini</option>
+                <option>gpt-4o</option>
+                <option>claude-3-5-sonnet-latest</option>
+                <option>claude-3-7-sonnet-latest</option>
+              </select>
+              <button onclick="estimateTokens()">Estimate</button>
+            </div>
+            <div class="row">
+              <button onclick="pasteTokens()">Paste</button>
+              <button onclick="clearTokens()">Clear</button>
+            </div>
+          </div>
+          <textarea id="token-input" placeholder="Paste text"></textarea>
+          <div id="token-result" class="muted"></div>
+        </div>
+        <div class="panel"><h3>Provider Keys</h3><div id="providers" class="muted"></div></div>
+        <div class="panel"><h3>Status</h3><div id="status" class="muted"></div></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const state = { data: null };
+    function send(p) { window.ipc.postMessage(JSON.stringify(p)); }
+    function estimateTokens() {
+      send({ type:'estimate-tokens',
+        model: document.getElementById('token-model').value,
+        text: document.getElementById('token-input').value });
+    }
+    async function pasteTokens() {
+      const i = document.getElementById('token-input');
+      i.focus();
+      try { if (navigator.clipboard?.readText) { const t = await navigator.clipboard.readText(); if (t) i.value = t; } } catch (_) {}
+    }
+    function clearTokens() { const i = document.getElementById('token-input'); i.value = ''; i.focus(); }
+    function saveProvider(p) {
+      const el = document.getElementById('provider-' + p);
+      send({ type:'set-provider-key', provider:p, key:el.value });
+      el.value = '';
+    }
+    function validateProvider(p) { send({ type:'validate-provider', provider:p }); }
+    function clearProvider(p) { send({ type:'clear-provider-key', provider:p }); }
+    function confirmKill(pid, name) {
+      if (confirm('Kill PID ' + pid + ' (' + name + ')?')) send({ type:'kill', pid });
+    }
+    function esc(v) { return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function bytes(b) {
+      const u = ['B','KB','MB','GB','TB']; let v = b, i = 0;
+      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return i === 0 ? b + ' B' : v.toFixed(1) + ' ' + u[i];
+    }
+    function heatDot(pct) { return pct > 80 ? 'bad' : pct > 50 ? 'warn' : 'ok'; }
+
+    function render() {
+      if (!state.data) return;
+      const d = state.data, s = d.summary;
+      document.getElementById('capture').textContent = 'Snapshot ' + d.captured_at;
+      document.getElementById('sort').value = d.filters.sort_mode;
+
+      const stats = [
+        ['CPU',  s.cpu_percent.toFixed(0) + '%',
+          'load ' + s.load_average[0].toFixed(2) + ' ' + s.load_average[1].toFixed(2) + ' ' + s.load_average[2].toFixed(2),
+          s.cpu_percent],
+        ['RAM',  s.ram_label, s.ram_percent.toFixed(0) + '% used', s.ram_percent],
+        ['Swap', s.swap_label, '', 0],
+        ['GPU',  s.gpu_percent == null ? 'n/a' : s.gpu_percent.toFixed(0) + '%', '', s.gpu_percent ?? 0],
+        ['Net',  '↓ ' + s.net_rx, '↑ ' + s.net_tx, 0],
+        ['Disk', '↓ ' + s.disk_read, '↑ ' + s.disk_write, 0],
+      ];
+      document.getElementById('stats').innerHTML = stats.map(([l, v, sub, pct]) => `
+        <div class="stat">
+          <div class="label">${esc(l)}</div>
+          <div class="value">${esc(v)}</div>
+          <div class="sub">${esc(sub)}</div>
+          ${pct ? `<div class="fill" style="width:${Math.min(100, pct)}%"></div>` : ''}
+        </div>`).join('');
+
+      document.getElementById('cores').innerHTML = d.cores.map(c => `
+        <div class="core">
+          <div class="bar" style="width:${Math.min(100, c.percent)}%"></div>
+          <div class="tag"><span>C${c.index}</span><span>${c.percent.toFixed(0)}%</span></div>
+        </div>`).join('');
+
+      const q = document.getElementById('search').value.toLowerCase();
+      const meOnly = document.getElementById('current-user').checked;
+      const lhOnly = document.getElementById('localhost-only').checked;
+      const rows = d.processes.filter(p =>
+        (!meOnly || p.current_user) &&
+        (!lhOnly || p.localhost) &&
+        (!q || p.name.toLowerCase().includes(q) || String(p.pid).includes(q))
+      );
+      document.getElementById('process-rows').innerHTML = rows.map(p => `
+        <tr class="tr-hl">
+          <td class="proc-name" title="${esc(p.command)}">${esc(p.name)}</td>
+          <td>${p.pid}</td>
+          <td><span class="dot ${heatDot(p.cpu_percent)}"></span>${p.cpu_percent.toFixed(1)}%</td>
+          <td>${esc(bytes(p.memory_bytes))}</td>
+          <td class="muted">${esc(p.user_name)}</td>
+          <td>${p.current_user ? '<span class="pill">me</span>' : ''}${p.localhost ? '<span class="pill">local</span>' : ''}${p.ai_label ? `<span class="pill">${esc(p.ai_label)}</span>` : ''}</td>
+          <td><button class="danger" onclick="confirmKill(${p.pid}, ${JSON.stringify(p.name)})">Kill</button></td>
+        </tr>`).join('');
+
+      document.getElementById('ai-workloads').innerHTML = d.ai_workloads.length
+        ? d.ai_workloads.map(w => `
+          <div style="margin-bottom:8px">
+            <strong>${esc(w.label)}</strong>
+            <div class="muted">${esc(w.category)} · ${w.process_count} proc · ${w.total_cpu_percent.toFixed(0)}% CPU · ${esc(bytes(w.total_memory_bytes))}</div>
+          </div>`).join('')
+        : 'No inferred AI workloads';
+
+      document.getElementById('providers').innerHTML = d.providers.map(p => `
+        <div style="margin-bottom:10px">
+          <div><strong>${esc(p.provider)}</strong> <span class="muted">${esc(p.status)}</span></div>
+          <div class="row" style="margin-top:6px">
+            <input id="provider-${p.provider}" placeholder="${p.provider} API key" style="min-width:200px" />
+            <button onclick="saveProvider('${p.provider}')">Save</button>
+            <button onclick="validateProvider('${p.provider}')">Validate</button>
+            <button class="danger" onclick="clearProvider('${p.provider}')">Clear</button>
+          </div>
+        </div>`).join('');
+
+      document.getElementById('token-result').textContent = d.token_result
+        ? `${d.token_result.token_count} tokens (${d.token_result.mode}) for ${d.token_result.model}`
+        : 'Local estimation requires no sign-in.';
+      document.getElementById('status').textContent = d.status_message
+        || 'Tray metrics update live; inspector freezes on a snapshot until you refresh.';
+    }
+    window.updateFromRust = function (next) { state.data = next; render(); };
+  </script>
+</body>
+</html>

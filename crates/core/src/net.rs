@@ -85,10 +85,37 @@ fn first_line(cmd: &str, args: &[&str]) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
+/// The interface carrying the default route (e.g. "en0", "en1"), per `route get default`.
+fn default_interface() -> Option<String> {
+    let out = Command::new("route").args(["-n", "get", "default"]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("interface:").map(|s| s.trim().to_owned()))
+}
+
+/// IPv4 of the active interface — the default-route one first, then common fallbacks.
+/// The mini's active interface isn't always `en0` (Wi-Fi/Ethernet/USB-LAN vary).
+fn lan_ip() -> Option<String> {
+    if let Some(iface) = default_interface()
+        && let Some(ip) = first_line("ipconfig", &["getifaddr", &iface])
+    {
+        return Some(ip);
+    }
+    for iface in ["en0", "en1", "en2"] {
+        if let Some(ip) = first_line("ipconfig", &["getifaddr", iface]) {
+            return Some(ip);
+        }
+    }
+    None
+}
+
 pub fn network_identity(hostname: String) -> NetIdentity {
     NetIdentity {
         hostname,
-        lan_ip: first_line("ipconfig", &["getifaddr", "en0"]),
+        lan_ip: lan_ip(),
         tailnet_ip: first_line("tailscale", &["ip", "-4"])
             .and_then(|s| s.lines().next().map(|l| l.to_owned())),
     }

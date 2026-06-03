@@ -11,6 +11,13 @@ use crate::ai::{self, AiSnapshot};
 use crate::util::capture_label;
 
 const MIN_VISIBLE_CPU_PERCENT: f32 = 0.2;
+
+pub fn ewma_update(prev: Option<f32>, current: f32, alpha: f32) -> f32 {
+    match prev {
+        Some(p) => p * (1.0 - alpha) + current * alpha,
+        None => current,
+    }
+}
 const MIN_VISIBLE_MEMORY_BYTES: u64 = 20 * 1024 * 1024;
 const LOCALHOST_REFRESH: Duration = Duration::from_secs(10);
 
@@ -42,6 +49,7 @@ pub struct ProcessRow {
     pub command: String,
     pub ai_label: Option<String>,
     pub ai_category: Option<String>,
+    pub sustained_cpu: f32,
 }
 
 #[derive(Clone, Serialize)]
@@ -95,6 +103,7 @@ pub struct Sampler {
     connections: Vec<crate::net::ConnGroup>,
     identity: crate::net::NetIdentity,
     disks: Disks,
+    cpu_ewma: std::collections::HashMap<u32, f32>,
 }
 
 impl Sampler {
@@ -119,6 +128,7 @@ impl Sampler {
                 System::host_name().unwrap_or_default(),
             ),
             disks: Disks::new_with_refreshed_list(),
+            cpu_ewma: std::collections::HashMap::new(),
         }
     }
 
@@ -203,20 +213,35 @@ impl Sampler {
                     .unwrap_or_else(|| "-".to_owned());
                 let ai_match = ai::detect(&process.name().to_string_lossy(), &command);
 
+                let pid_u32 = pid.as_u32();
+                let sustained_cpu = ewma_update(
+                    self.cpu_ewma.get(&pid_u32).copied(),
+                    process.cpu_usage(),
+                    0.2,
+                );
+
                 ProcessRow {
-                    pid: pid.as_u32(),
+                    pid: pid_u32,
                     name: process.name().to_string_lossy().into_owned(),
                     cpu_percent: process.cpu_usage(),
                     memory_bytes: process.memory(),
                     current_user: !current_user.is_empty() && user_name == current_user,
                     user_name,
-                    localhost: self.localhost_pids.contains(&pid.as_u32()),
+                    localhost: self.localhost_pids.contains(&pid_u32),
                     command,
                     ai_label: ai_match.map(|(label, _)| label.to_owned()),
                     ai_category: ai_match.map(|(_, cat)| cat.to_owned()),
+                    sustained_cpu,
                 }
             })
             .collect();
+
+        let alive: std::collections::HashSet<u32> =
+            processes.iter().map(|p| p.pid).collect();
+        self.cpu_ewma.retain(|pid, _| alive.contains(pid));
+        for p in &processes {
+            self.cpu_ewma.insert(p.pid, p.sustained_cpu);
+        }
 
         match sort_mode {
             SortMode::Cpu => processes.sort_by(|a, b| {
@@ -326,4 +351,22 @@ fn gpu_percent() -> Option<f32> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ewma_update;
+
+    #[test]
+    fn ewma_seeds_with_first_value() {
+        assert_eq!(ewma_update(None, 40.0, 0.2), 40.0);
+    }
+
+    #[test]
+    fn ewma_decays_toward_current() {
+        // prev 0, current 100, alpha 0.2 → 20
+        assert!((ewma_update(Some(0.0), 100.0, 0.2) - 20.0).abs() < 1e-4);
+        // prev 50, current 0, alpha 0.2 → 40
+        assert!((ewma_update(Some(50.0), 0.0, 0.2) - 40.0).abs() < 1e-4);
+    }
 }

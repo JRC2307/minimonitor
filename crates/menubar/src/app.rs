@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-use keyring::use_native_store;
 use tao::{
     event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
@@ -13,7 +12,6 @@ use tray_icon::{
 };
 
 use crate::inspector::{self, FilterState, InspectorCommand, InspectorWindow};
-use crate::services::{self, TokenEstimateResult};
 use minimonitor_core::snapshot::{MonitorSnapshot, Sampler, SortMode};
 use crate::tray;
 use crate::util::percentage;
@@ -87,12 +85,10 @@ struct AppState {
     status_message: Option<String>,
     inspector: Option<InspectorWindow>,
     filters: FilterState,
-    token_result: Option<TokenEstimateResult>,
 }
 
 impl AppState {
     fn new(proxy: EventLoopProxy<UserEvent>) -> Self {
-        let _ = use_native_store(false);
         let mut sampler = Sampler::new();
         let live = sampler.sample(SortMode::Cpu);
         Self {
@@ -105,7 +101,6 @@ impl AppState {
             status_message: None,
             inspector: None,
             filters: FilterState::default(),
-            token_result: None,
         }
     }
 
@@ -231,32 +226,6 @@ impl AppState {
                 self.refresh_live();
                 self.presentation = Some(self.live.clone());
             }
-            InspectorCommand::SetProviderKey { provider, key } => {
-                let p = services::normalize_provider(&provider);
-                self.status_message = Some(match services::set_provider_key(p, &key) {
-                    Ok(()) => format!("Stored {p} key in Keychain"),
-                    Err(e) => format!("Failed to store {p} key: {e}"),
-                });
-            }
-            InspectorCommand::ClearProviderKey { provider } => {
-                let p = services::normalize_provider(&provider);
-                self.status_message = Some(match services::clear_provider_key(p) {
-                    Ok(()) => format!("Removed {p} key"),
-                    Err(e) => format!("Failed to remove {p} key: {e}"),
-                });
-            }
-            InspectorCommand::ValidateProvider { provider } => {
-                let p = services::normalize_provider(&provider);
-                self.status_message = Some(match services::validate_provider(p) {
-                    Ok(status) if status.is_success() => format!("{p} connected"),
-                    Ok(status) => format!("{p} validation failed with {status}"),
-                    Err(e) => format!("{p} validation error: {e}"),
-                });
-            }
-            InspectorCommand::EstimateTokens { model, text } => {
-                self.token_result = Some(services::estimate_tokens(&model, &text));
-                self.status_message = Some(format!("Estimated tokens for {model}"));
-            }
         }
 
         if self.inspector.is_none() {
@@ -294,15 +263,9 @@ impl AppState {
             return;
         };
         let snapshot = self.presentation.as_ref().unwrap_or(&self.live);
-        let providers = ["openai", "anthropic"]
-            .iter()
-            .map(|p| services::provider_state(p))
-            .collect::<Vec<_>>();
         let view = inspector::build_view(
             snapshot,
             &self.filters,
-            providers,
-            self.token_result.clone(),
             self.status_message.clone(),
         );
         inspector::push_state(inspector, &view);

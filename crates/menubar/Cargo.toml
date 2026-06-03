@@ -1,0 +1,20 @@
+[package]
+name = "minimonitor"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "minimonitor"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+keyring = "4.0.0-rc.3"
+keyring-core = "0.7.2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+tiktoken-rs = "0.9"
+tao = "0.34"
+tray-icon = { version = "0.21", default-features = false }
+wry = "0.54"

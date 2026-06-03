@@ -6,6 +6,8 @@ fn main() {
 }
 
 #[cfg(target_os = "macos")]
+mod actions;
+#[cfg(target_os = "macos")]
 mod app;
 #[cfg(target_os = "macos")]
 mod inspector;

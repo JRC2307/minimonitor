@@ -130,7 +130,7 @@ impl AppState {
             return;
         }
         let tray = tray::build_tray(&self.status_title());
-        let _ = tray.set_menu(Some(Box::new(self.menu())));
+        tray.set_menu(Some(Box::new(self.menu())));
         self.tray = Some(tray);
     }
 
@@ -157,12 +157,10 @@ impl AppState {
             button_state,
             ..
         } = event
+            && matches!(button, MouseButton::Left | MouseButton::Right)
+            && button_state == MouseButtonState::Down
         {
-            if matches!(button, MouseButton::Left | MouseButton::Right)
-                && button_state == MouseButtonState::Down
-            {
-                self.presentation = Some(self.live.clone());
-            }
+            self.presentation = Some(self.live.clone());
         }
     }
 

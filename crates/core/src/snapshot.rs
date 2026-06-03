@@ -108,6 +108,12 @@ pub struct Sampler {
     cpu_ewma: std::collections::HashMap<u32, f32>,
 }
 
+impl Default for Sampler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sampler {
     pub fn new() -> Self {
         let mut system = System::new();
@@ -350,12 +356,11 @@ fn gpu_percent() -> Option<f32> {
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines() {
         let line = line.trim();
-        if line.contains("\"Device Utilization %\"") {
-            if let Some(eq) = line.find('=') {
-                if let Ok(v) = line[eq + 1..].trim().parse::<f32>() {
-                    return Some(v);
-                }
-            }
+        if line.contains("\"Device Utilization %\"")
+            && let Some(eq) = line.find('=')
+            && let Ok(v) = line[eq + 1..].trim().parse::<f32>()
+        {
+            return Some(v);
         }
     }
     None

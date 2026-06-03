@@ -8,7 +8,6 @@ use wry::{WebView, WebViewBuilder, http::Request};
 
 use minimonitor_core::ai::AiWorkload;
 use crate::app::UserEvent;
-use crate::services::{ProviderState, TokenEstimateResult};
 use minimonitor_core::snapshot::{CoreUsage, MonitorSnapshot, ProcessRow, is_visible};
 use crate::util::{format_bytes_pair, format_rate, make_window_icon, percentage};
 
@@ -41,10 +40,6 @@ pub enum InspectorCommand {
     Close,
     Kill { pid: u32 },
     SetSort { value: String },
-    SetProviderKey { provider: String, key: String },
-    ClearProviderKey { provider: String },
-    ValidateProvider { provider: String },
-    EstimateTokens { model: String, text: String },
 }
 
 #[derive(Serialize)]
@@ -54,8 +49,6 @@ pub struct InspectorView {
     pub processes: Vec<ProcessRow>,
     pub ai_workloads: Vec<AiWorkload>,
     pub cores: Vec<CoreUsage>,
-    pub providers: Vec<ProviderState>,
-    pub token_result: Option<TokenEstimateResult>,
     pub status_message: Option<String>,
     pub captured_at: String,
 }
@@ -111,8 +104,6 @@ pub fn open(
 pub fn build_view(
     snapshot: &MonitorSnapshot,
     filters: &FilterState,
-    providers: Vec<ProviderState>,
-    token_result: Option<TokenEstimateResult>,
     status_message: Option<String>,
 ) -> InspectorView {
     let processes = snapshot
@@ -154,8 +145,6 @@ pub fn build_view(
         processes,
         ai_workloads: snapshot.ai_snapshot.top_workloads.clone(),
         cores: snapshot.cores.clone(),
-        providers,
-        token_result,
         status_message,
         captured_at: snapshot.captured_at.clone(),
     }

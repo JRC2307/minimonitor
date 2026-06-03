@@ -80,27 +80,6 @@
       </div>
       <div style="display:grid; gap:10px;">
         <div class="panel"><h3>AI Workloads</h3><div id="ai-workloads" class="muted"></div></div>
-        <div class="panel">
-          <h3>Token Checker</h3>
-          <div class="row" style="justify-content:space-between">
-            <div class="row">
-              <select id="token-model">
-                <option>gpt-4o-mini</option>
-                <option>gpt-4o</option>
-                <option>claude-3-5-sonnet-latest</option>
-                <option>claude-3-7-sonnet-latest</option>
-              </select>
-              <button onclick="estimateTokens()">Estimate</button>
-            </div>
-            <div class="row">
-              <button onclick="pasteTokens()">Paste</button>
-              <button onclick="clearTokens()">Clear</button>
-            </div>
-          </div>
-          <textarea id="token-input" placeholder="Paste text"></textarea>
-          <div id="token-result" class="muted"></div>
-        </div>
-        <div class="panel"><h3>Provider Keys</h3><div id="providers" class="muted"></div></div>
         <div class="panel"><h3>Status</h3><div id="status" class="muted"></div></div>
       </div>
     </div>
@@ -108,24 +87,6 @@
   <script>
     const state = { data: null };
     function send(p) { window.ipc.postMessage(JSON.stringify(p)); }
-    function estimateTokens() {
-      send({ type:'estimate-tokens',
-        model: document.getElementById('token-model').value,
-        text: document.getElementById('token-input').value });
-    }
-    async function pasteTokens() {
-      const i = document.getElementById('token-input');
-      i.focus();
-      try { if (navigator.clipboard?.readText) { const t = await navigator.clipboard.readText(); if (t) i.value = t; } } catch (_) {}
-    }
-    function clearTokens() { const i = document.getElementById('token-input'); i.value = ''; i.focus(); }
-    function saveProvider(p) {
-      const el = document.getElementById('provider-' + p);
-      send({ type:'set-provider-key', provider:p, key:el.value });
-      el.value = '';
-    }
-    function validateProvider(p) { send({ type:'validate-provider', provider:p }); }
-    function clearProvider(p) { send({ type:'clear-provider-key', provider:p }); }
     function confirmKill(pid, name) {
       if (confirm('Kill PID ' + pid + ' (' + name + ')?')) send({ type:'kill', pid });
     }
@@ -194,20 +155,6 @@
           </div>`).join('')
         : 'No inferred AI workloads';
 
-      document.getElementById('providers').innerHTML = d.providers.map(p => `
-        <div style="margin-bottom:10px">
-          <div><strong>${esc(p.provider)}</strong> <span class="muted">${esc(p.status)}</span></div>
-          <div class="row" style="margin-top:6px">
-            <input id="provider-${p.provider}" placeholder="${p.provider} API key" style="min-width:200px" />
-            <button onclick="saveProvider('${p.provider}')">Save</button>
-            <button onclick="validateProvider('${p.provider}')">Validate</button>
-            <button class="danger" onclick="clearProvider('${p.provider}')">Clear</button>
-          </div>
-        </div>`).join('');
-
-      document.getElementById('token-result').textContent = d.token_result
-        ? `${d.token_result.token_count} tokens (${d.token_result.mode}) for ${d.token_result.model}`
-        : 'Local estimation requires no sign-in.';
       document.getElementById('status').textContent = d.status_message
         || 'Tray metrics update live; inspector freezes on a snapshot until you refresh.';
     }

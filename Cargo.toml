@@ -19,3 +19,7 @@ wry = "0.54"
 lto = true
 codegen-units = 1
 strip = true
+
+[profile.dev]
+debug = "line-tables-only"
+incremental = false

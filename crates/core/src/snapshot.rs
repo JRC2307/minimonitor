@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use sysinfo::{
-    Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
+    Disks, Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
 };
 
 use crate::ai::{self, AiSnapshot};
@@ -51,6 +51,14 @@ pub struct CoreUsage {
 }
 
 #[derive(Clone, Serialize)]
+pub struct DiskVolume {
+    pub name: String,
+    pub mount: String,
+    pub total_bytes: u64,
+    pub available_bytes: u64,
+}
+
+#[derive(Clone, Serialize)]
 pub struct MonitorSnapshot {
     pub total_memory_bytes: u64,
     pub used_memory_bytes: u64,
@@ -71,6 +79,9 @@ pub struct MonitorSnapshot {
     pub processes: Vec<ProcessRow>,
     pub sort_mode: SortMode,
     pub captured_at: String,
+    pub disks: Vec<DiskVolume>,
+    pub uptime_secs: u64,
+    pub boot_epoch: u64,
 }
 
 pub struct Sampler {
@@ -83,6 +94,7 @@ pub struct Sampler {
     ports: Vec<crate::net::PortRow>,
     connections: Vec<crate::net::ConnGroup>,
     identity: crate::net::NetIdentity,
+    disks: Disks,
 }
 
 impl Sampler {
@@ -106,6 +118,7 @@ impl Sampler {
             identity: crate::net::network_identity(
                 System::host_name().unwrap_or_default(),
             ),
+            disks: Disks::new_with_refreshed_list(),
         }
     }
 
@@ -125,6 +138,7 @@ impl Sampler {
             self.identity = crate::net::network_identity(
                 System::host_name().unwrap_or_default(),
             );
+            self.disks.refresh(true);
             self.last_localhost = now;
         }
 
@@ -220,6 +234,17 @@ impl Sampler {
             }),
         }
 
+        let disks: Vec<DiskVolume> = self
+            .disks
+            .iter()
+            .map(|d| DiskVolume {
+                name: d.name().to_string_lossy().into_owned(),
+                mount: d.mount_point().to_string_lossy().into_owned(),
+                total_bytes: d.total_space(),
+                available_bytes: d.available_space(),
+            })
+            .collect();
+
         MonitorSnapshot {
             total_memory_bytes: self.system.total_memory(),
             used_memory_bytes: self.system.used_memory(),
@@ -240,6 +265,9 @@ impl Sampler {
             processes,
             sort_mode,
             captured_at: capture_label(),
+            disks,
+            uptime_secs: System::uptime(),
+            boot_epoch: System::boot_time(),
         }
     }
 

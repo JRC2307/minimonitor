@@ -2,7 +2,9 @@
 
 **Plan for:** `2026-06-20-fleet-phase0+1-inventory-registry-observability.md` (spec)
 **Date:** 2026-06-20
-**Implements:** plane 2 (inventory registry) + plane 5 (observability) of the fleet north-star, as the new `crates/fleet` member of the `minimonitor` workspace plus a git-tracked `deploy/` Docker stack.
+**Implements:** plane 2 (inventory registry) + plane 5 (observability) of the fleet north-star, as the new `crates/fleet` member of the `minimonitor` workspace plus a git-tracked `deploy/` Docker stack and the custom `fleet serve` web UI.
+
+**Host:** the hub/server is a **new, dedicated Intel Mac mini** (not yet configured) — still macOS, so all macOS-specific work (Keychain, LaunchAgents, native-on-host probe, `tailscale ip -4`) stands. The **M4 mini is dev-only.** Docker images are `linux/amd64`. The host's MagicDNS name is `${INTEL_MINI_HOST}` and its tailnet IP `${HOST_TS_IP}` — both unknown until box bring-up (the old M4 `js-mac-mini.tail82f3c6.ts.net` no longer applies). Migrating the M4's other services to the Intel mini is a **separate follow-on project**, out of scope here.
 
 ---
 
@@ -50,15 +52,17 @@ TDD discipline for **every** task: write the test(s) first, watch them fail (com
 | ntfy publish / healthchecks ping | `wiremock` | `crates/fleet/tests/fixtures/ntfy/*.json` |
 | **Uptime-Kuma socket.io** | in-memory **fake `KumaClient`** for logic; **recorded payload fixture** for the `MonitorSpec` contract test; one non-ignored transport/replay test against frames or an ephemeral container | `crates/fleet/tests/fixtures/kuma/*.json` |
 | **trippy-core MTR** | never traced live; `evaluate()` is pure over in-memory `HopStat` | n/a (synthetic structs) |
+| **`fleet serve` (axum + askama)** | axum `oneshot` (`tower::ServiceExt`) against a seeded temp SQLite; askama templates compile-checked; JSON schema-lock at `/api/*` | seeded `tempfile` DB; golden under `crates/fleet/tests/fixtures/export/` |
 
-Fixtures are recorded **once** against the pinned versions (Kuma 1.23.16, Beszel 0.9.1 hub+agent, `trippy-core =0.13.0`, Homepage v0.10.9, ntfy v2.11.0). Re-record only on a deliberate version bump; a bump is its own commit.
+Fixtures are recorded **once** against the pinned versions (Kuma 1.23.16, Beszel 0.9.1 hub+agent, `trippy-core =0.13.0`, ntfy v2.11.0, `cloudflared` pinned tag). Re-record only on a deliberate version bump; a bump is its own commit. `fleet serve` has **no live network in tests.**
 
 ### Residual questions to resolve during execution
 
-Three residual questions from spec §10 are answered **by recording a fixture during the task that needs them**, not up front:
+Residual questions from spec §10 are answered **by recording a fixture during the task that needs them**, not up front:
 - Beszel agent's self-registered `name` (Task 14 / blocks Task 11's match key) → record against live `henrygd/beszel-agent:0.9.1` before finalizing Task 11's fixture.
 - Kuma 1.23.16 frame shapes (Task 12) → record login-ack / `monitorList` / add-edit-delete frames before Task 12.
-- Homepage v0.10.9 static-serve of `/app/public` (Task 13) → verify; caddy-sidecar fallback documented in Task 13.
+- **Intel mini bring-up identity** (`${INTEL_MINI_HOST}` MagicDNS name + `${HOST_TS_IP}` `100.x` IP) → unknown until the box is configured; `${HOST_TS_IP}` is templated from `tailscale ip -4` at install (Task 15), `${INTEL_MINI_HOST}` filled into `fleet.toml`/`.env`/CF tunnel ingress at bring-up.
+- **Cloudflare Access policy** fronting `fleet.<domain>` (Task 18) → confirm the Zero-Trust application + operator identity policy and that `cloudflared` ingress maps to `${HOST_TS_IP}:8099`.
 
 ---
 
@@ -68,12 +72,12 @@ Three residual questions from spec §10 are answered **by recording a fixture du
 
 **Tests to write first.**
 - `crates/fleet/tests/cli_smoke.rs::version_flag_prints_semver` — run the built binary via `assert_cmd` (add `assert_cmd = "2"` to dev-deps) with `--version`; assert exit 0 and stdout matches `^fleet 0\.2\.0`.
-- `crates/fleet/tests/gitignore_test.rs::ignores_deploy_secrets` — read the repo-root `.gitignore`; assert it contains `deploy/.env`, `deploy/*_data/`, `deploy/ntfy/`, and `deploy/homepage/fleet/*.json`.
+- `crates/fleet/tests/gitignore_test.rs::ignores_deploy_secrets` — read the repo-root `.gitignore`; assert it contains `deploy/.env`, `deploy/*_data/`, and `deploy/ntfy/`. (No `deploy/homepage/*` pattern — Homepage is dropped; `fleet serve` serves JSON from SQLite, not files.)
 - A shell-level check (lives in the CI workflow, not cargo): `scripts/secret-scan.sh` greps tracked files for `tk_`, `Bearer `, `client_secret` and exits non-zero on a hit; a test fixture file under `crates/fleet/tests/fixtures/.gitkeep` proves the scan ignores untracked/fixture noise correctly (scan only `git ls-files`).
 
 **Implementation.**
-- Root `Cargo.toml`: add `"crates/fleet"` to `members`; hoist the fleet deps into `[workspace.dependencies]` exactly as spec §3.1 (clap, tokio, reqwest rustls-only, rusqlite bundled, rusqlite_migration, figment, serde_yaml_ng, chrono, anyhow, thiserror). Leave existing `version=0.2.0`, `edition=2024`, `resolver=2`, profiles untouched.
-- `crates/fleet/Cargo.toml`: per spec §3.1 (package+bin both `fleet`, `version.workspace`, `edition.workspace`, path dep on `minimonitor-core`, the unstable pins `trippy-core="=0.13.0"` and `rust_socketio="0.6"` with `async`, `ipnet`, `async-trait`); dev-deps `wiremock`, `tempfile`, `assert_cmd`, `tokio`.
+- Root `Cargo.toml`: add `"crates/fleet"` to `members`; hoist the fleet deps into `[workspace.dependencies]` exactly as spec §3.1 (clap, tokio, reqwest rustls-only, rusqlite bundled, rusqlite_migration, figment, serde_yaml_ng, chrono, anyhow, thiserror, **axum 0.8, askama 0.13, tower-http 0.6 with `fs`**). Leave existing `version=0.2.0`, `edition=2024`, `resolver=2`, profiles untouched.
+- `crates/fleet/Cargo.toml`: per spec §3.1 (package+bin both `fleet`, `version.workspace`, `edition.workspace`, path dep on `minimonitor-core`, the unstable pins `trippy-core="=0.13.0"` and `rust_socketio="0.6"` with `async`, `ipnet`, `async-trait`, the serve deps `axum`/`askama`/`tower-http`); dev-deps `wiremock`, `tempfile`, `assert_cmd`, `tokio`, **`tower` (for `oneshot`)**.
 - `crates/fleet/src/main.rs`: `#[tokio::main]` stub that wires only clap `--version` for now (clap derive picks up `version` from `Cargo.toml`).
 - Append to `.gitignore`: the four deploy patterns.
 - `scripts/secret-scan.sh` + a `.github/workflows/secret-scan.yml` (or the repo's existing CI mechanism — if none, ship the script and document running it from `install.sh`).
@@ -186,21 +190,21 @@ Three residual questions from spec §10 are answered **by recording a fixture du
 
 ---
 
-## Task 7 — `fleet export` + schema lock
+## Task 7 — `fleet export` builders + schema lock
 
-**Goal.** Build `fleet.json` / `cf.json` / `path-health.json` for Homepage with a frozen, fixtures-tested schema.
+**Goal.** Build the JSON export structs (`fleet` / `cf` / `path-health` shapes) reused by both CLI `--json` and (Task 16) `fleet serve` `/api/*`, plus the git-tracked `fleet.yaml` snapshot writer, with a frozen, fixtures-tested schema. **No static files served** — these builders are the single source of truth the web daemon reuses.
 
 **Tests to write first.**
-- `export::build_fleet_json`: produces the exact shape of spec §3.7 (`generated_at`, `nodes[]` with `id/hostname/tier/online/site/role/owner/last_seen`); `online` is the registry-derived value (1/0).
-- **schema-lock test:** serialize a known fixture `Vec<Node>` and assert the JSON's depended-on dotted key paths (`nodes`, `nodes[].hostname`, `nodes[].online`, `nodes[].site`) match a checked-in golden file byte-for-byte (Homepage `customapi` is brittle to renames — a rename must fail this test).
-- `cf.json` and `path-health.json` builders emit **empty-but-valid** structures (`{"zones":[]}`, `{"hops":[]}`) until their source commands land, and validate against their golden shape.
+- `export::build_fleet_json`: produces the exact shape of spec §3.7/§3.8 (`generated_at`, `nodes[]` with `id/hostname/tier/online/site/role/owner/last_seen`); `online` is the registry-derived value (1/0).
+- **schema-lock test:** serialize a known fixture `Vec<Node>` and assert the JSON's depended-on dotted key paths (`nodes`, `nodes[].hostname`, `nodes[].online`, `nodes[].site`) match a checked-in golden file byte-for-byte (a rename must fail this test). Task 16 repoints this same contract at the `/api/*` endpoints.
+- `cf` and `path-health` builders emit **empty-but-valid** structures (`{"zones":[]}`, `{"hops":[]}`) until their source commands land, and validate against their golden shape.
 
 **Implementation.**
-- `export.rs`: `build_fleet_json`, `build_cf_json`, `build_path_health_json`; `write_exports(dir)` writing all three into `export_dir`.
-- `commands/export.rs`: load from DB, write files.
+- `export.rs`: `build_fleet_json`, `build_cf_json`, `build_path_health_json` (returning serializable structs); `write_fleet_yaml` (git snapshot, volatile fields excluded — may already exist from Task 5). These builder structs are public so `serve` (Task 16) reuses them directly.
+- `commands/export.rs`: load from DB, write **only** the git-tracked `fleet.yaml` snapshot (no JSON files — the live JSON is served by `fleet serve`).
 - Golden fixtures under `crates/fleet/tests/fixtures/export/`.
 
-**Acceptance.** Schema-lock golden matches; empty-but-valid cf/path files validate. Commit.
+**Acceptance.** Schema-lock golden matches; empty-but-valid cf/path shapes validate; `fleet export` writes only `fleet.yaml`. Commit.
 
 ---
 
@@ -312,23 +316,22 @@ Three residual questions from spec §10 are answered **by recording a fixture du
 
 ---
 
-## Task 13 — Docker stack + Homepage config
+## Task 13 — Docker stack (FOSS + cloudflared)
 
-**Goal.** Pinned `deploy/docker-compose.yml` bound to `${MINI_TS_IP}`; Homepage `services.yaml` (customapi + native widgets); `.env.example`; verify static-serve of exports.
+**Goal.** Pinned `deploy/docker-compose.yml` (`linux/amd64` Beszel + Kuma + ntfy + `cloudflared`) bound to `${HOST_TS_IP}`; `.env.example`. **No Homepage** — the single pane is the native `fleet serve` (Tasks 16–18).
 
 **Tests to write first** (file/lint-level — no live containers in cargo).
-- `crates/fleet/tests/deploy_test.rs::compose_binds_tailnet_only` — parse `deploy/docker-compose.yml`; assert every published port is templated on `${MINI_TS_IP}` and **no** literal `0.0.0.0`/bare `host:container` wildcard appears; assert image tags are pinned (Beszel `0.9.1`, Kuma `1.23.16`, Homepage `v0.10.9`, ntfy `v2.11.0`).
+- `crates/fleet/tests/deploy_test.rs::compose_binds_tailnet_only` — parse `deploy/docker-compose.yml`; assert every **published** port is templated on `${HOST_TS_IP}` and **no** literal `0.0.0.0`/bare `host:container` wildcard appears; assert image tags are pinned (Beszel `0.9.1`, Kuma `1.23.16`, ntfy `v2.11.0`, `cloudflared` pinned tag).
 - `compose_kuma_has_net_raw` — Kuma service has `cap_add: [NET_RAW]`.
-- `homepage_services_use_var_refs` — `services.yaml` contains only `{{HOMEPAGE_VAR_*}}` references, no literal secrets; the three customapi widgets point at `http://localhost:3000/fleet/{fleet,path-health,cf}.json`.
+- `compose_has_no_homepage` — assert there is **no** `homepage`/`gethomepage` service and no `services.yaml` under `deploy/`.
+- `compose_cloudflared_no_published_port` — the `cloudflared` service publishes **no** port (outbound tunnel only) and reads its token from `${FLEET_CF_TUNNEL_TOKEN}` (no literal token).
 - `doctor` (from Task 2) run over this real compose file passes the bind check.
 
 **Implementation.**
-- `deploy/docker-compose.yml` exactly as spec §4 (all four services pinned, `${MINI_TS_IP}` host-bound, healthcheck on Beszel, `NET_RAW` on Kuma, Homepage `public/fleet` bind-mount + `HOMEPAGE_ALLOWED_HOSTS`, ntfy `deny-all`).
-- `deploy/homepage/config/services.yaml` per spec §4.1 (customapi Fleet Nodes / Path Health / SSL & Zones + native uptimekuma + beszel rollups).
-- `deploy/.env.example` (no real secrets).
-- **Static-serve verification (residual Q4):** manually `docker compose up` Homepage v0.10.9 and confirm `http://localhost:3000/fleet/fleet.json` serves the bind-mounted file. **If it does not**, add the documented **caddy sidecar** (a `caddy:2` service serving `./homepage/fleet` on an internal port, customapi URLs repointed at it) and note the decision in `deploy/README.md`.
+- `deploy/docker-compose.yml` exactly as spec §4 (Beszel + Kuma + ntfy + cloudflared, all `linux/amd64`, `${HOST_TS_IP}` host-bound, healthcheck on Beszel, `NET_RAW` on Kuma, ntfy `deny-all`, `cloudflared` with `TUNNEL_TOKEN: ${FLEET_CF_TUNNEL_TOKEN}` and no published port).
+- `deploy/.env.example` (no real secrets; includes `FLEET_CF_TUNNEL_TOKEN` placeholder).
 
-**Acceptance.** Compose-bind, pin, NET_RAW, and var-ref tests green; manual static-serve confirmed (or caddy fallback added). Commit.
+**Acceptance.** Compose-bind, pin, NET_RAW, no-Homepage, and cloudflared-no-port tests green. Commit.
 
 ---
 
@@ -340,7 +343,7 @@ Three residual questions from spec §10 are answered **by recording a fixture du
 - `crates/fleet/tests/deploy_test.rs::agent_compose_is_push_model` — parse the per-box `beszel-agent` compose; assert `network_mode: host`, `image: henrygd/beszel-agent:0.9.1` (matches hub), `TOKEN: ${BESZEL_BOOTSTRAP_TOKEN}`, **no inbound published port** (outbound WS only), docker.sock mounted read-only.
 
 **Implementation.**
-- `deploy/agent/docker-compose.yml` per spec §4.2 (host network, `LISTEN: 45876`, `HUB_URL` tailnet, bootstrap token env).
+- `deploy/agent/docker-compose.yml` per spec §4.2 (host network, `LISTEN: 45876`, `HUB_URL: http://${INTEL_MINI_HOST}:8090`, bootstrap token env).
 - `deploy/agent/README.md`: rollout steps, the push-through-NAT rationale (no SSH-key model, do not run `install-agent.sh`), and **the recorded self-registered `name`/`host`** value (residual Q2) that Task 11's enroll matches on — record it against the live agent and write it down here so the match key is locked.
 
 **Acceptance.** Push-model compose test green; rollout doc records the locked match identity. Commit.
@@ -349,28 +352,86 @@ Three residual questions from spec §10 are answered **by recording a fixture du
 
 ## Task 15 — Install + scheduling
 
-**Goal.** Extend `scripts/install.sh`: `fleet doctor` preflight → template `${MINI_TS_IP}` from `tailscale ip -4` (hard-fail empty) → `docker compose up -d` → install LaunchAgents on the spec cadence/boot-order.
+**Goal.** Extend `scripts/install.sh`: `fleet doctor` preflight → template `${HOST_TS_IP}` from `tailscale ip -4` (hard-fail empty) → `docker compose up -d` → install LaunchAgents on the spec cadence/boot-order. (Runs on the **Intel mini**; still macOS, so the LaunchAgent/Keychain mechanics are unchanged.)
 
 **Tests to write first** (script-level, runnable in CI with stubbed `tailscale`/`docker`).
 - `scripts/install_test.sh` (or bats): with a stubbed `tailscale ip -4` returning empty → install **hard-fails** before any compose action (R-5).
-- with `tailscale ip -4` → `100.71.2.3`, the rendered compose/env has `MINI_TS_IP=100.71.2.3`.
+- with `tailscale ip -4` → `100.71.2.3`, the rendered compose/env has `HOST_TS_IP=100.71.2.3`.
 - `fleet doctor` is invoked **before** `docker compose up` (assert ordering via a trace/log).
-- the generated LaunchAgent plists exist for: `heartbeat` (60s / `* * * * *`-equivalent `StartInterval 60`), `sync`/`enroll`/`probe` (300s, **offset** start times), `cf-sync` (900s), and `export` chained after sync/probe/cf-sync; boot order = stack up → sync → enroll → probe/cf-sync → export.
+- the generated LaunchAgent plists exist for: `heartbeat` (60s / `* * * * *`-equivalent `StartInterval 60`), `sync`/`enroll`/`probe` (300s, **offset** start times), `cf-sync` (900s), and `export` chained after sync/probe/cf-sync; boot order = stack up → sync → enroll → probe/cf-sync → export. (The `fleet serve` `KeepAlive` LaunchAgent is installed in Task 18.)
 
 **Implementation.**
-- Extend `scripts/install.sh` (keep the existing menubar install intact): build `fleet` release, run `fleet doctor`, resolve `MINI_TS_IP` (fail on empty), write `deploy/.env` `MINI_TS_IP`, `docker compose -f deploy/docker-compose.yml up -d`, then emit the per-command LaunchAgent plists with the cadences/offsets above (model them on the existing `com.caguabot.minimonitor.plist` template).
+- Extend `scripts/install.sh` (keep the existing menubar install intact): build `fleet` release, run `fleet doctor`, resolve `HOST_TS_IP` (fail on empty), write `deploy/.env` `HOST_TS_IP`, `docker compose -f deploy/docker-compose.yml up -d`, then emit the per-command LaunchAgent plists with the cadences/offsets above (model them on the existing `com.caguabot.minimonitor.plist` template).
 - `deploy/README.md`: the full boot/schedule table + rotation runbook pointer (spec §7).
 
 **Acceptance.** Empty-IP hard-fail, IP templating, doctor-before-up ordering, and all plist-presence tests green. Commit.
 
 ---
 
+## Task 16 — `fleet serve` skeleton + JSON API
+
+**Goal.** The 10th verb and the design's only long-running daemon: an `axum` app that opens the registry SQLite **read-only over WAL** and serves the `/api/*` JSON endpoints by **reusing the Task-7 `export.rs` builders**. Additive — reads the SQLite everything else already built.
+
+**Tests to write first** (axum `oneshot` against a seeded temp SQLite; no live bind, no network).
+- `serve::tests::api_fleet_returns_seeded_nodes` — seed a `tempfile` DB with 2 nodes via `db::nodes::upsert_node`; build the router with that DB path; `oneshot` a `GET /api/fleet`; assert 200 + body deserializes to the export struct with both nodes and registry-derived `online`.
+- `api_node_detail` — `GET /api/node/{id}` returns the node (404 on unknown id).
+- `api_path_health` / `api_cf` — return empty-but-valid (`{"hops":[]}`, `{"zones":[]}`) on an empty DB and seeded shapes when rows exist.
+- **read-only open:** the serve DB handle is opened `SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON` — a write attempt through it errors (proves it can't contend with the cron writer); a concurrent writer on the same WAL file does not block a serve read (open a second RW conn, begin a write, assert the serve read still returns).
+- **schema-lock repointed (R-testability):** the Task-7 golden contract now asserts the `/api/fleet` response body's dotted key-paths byte-for-byte (a field rename fails here).
+
+**Implementation.**
+- `serve/mod.rs`: `build_router(db_path) -> axum::Router` (read-only conn per request via `OpenFlags::SQLITE_OPEN_READ_ONLY` + `query_only`); `run(cfg)` binding `${HOST_TS_IP}:8099` (bind only outside tests — tests use `oneshot`).
+- `serve/routes.rs`: the four `/api/*` handlers, each loading from DB and returning `Json(export::build_*(...))`.
+- `cli.rs`: add the `serve` subcommand; `commands/serve.rs` wires config → `serve::run`.
+
+**Acceptance.** All `oneshot` API tests + read-only/WAL-concurrency + repointed schema-lock green. Commit.
+
+---
+
+## Task 17 — `fleet serve` HTML views + HTMX + doctor bind extension
+
+**Goal.** askama server-rendered pages mirroring the CLI, vendored CSS + HTMX for partial refresh, and the `fleet doctor` bind check extended to the `:8099` serve port.
+
+**Tests to write first.**
+- `serve::tests::index_renders_inventory` — `oneshot GET /` against the seeded DB; assert the HTML contains both seeded hostnames, the online ●/○ glyphs (from derived `online`), and a `~` marker on a fuzzy-merged row (mirrors `fleet list`).
+- `node_page_renders_detail` — `GET /node/{id}` HTML contains every `seen_in` pair + `dedupe_key_kind` (mirrors `fleet show`).
+- `paths_page` / `observability_page` — `/paths` renders the latest probe destination-hop severities; `/observability` renders CF zones + **links out** to `${INTEL_MINI_HOST}:8090` (Beszel) and `:3001` (Kuma) and the registry `online` rollup — assert it does **NOT** embed any Kuma socket.io call (R-10: links only).
+- **askama compile-check** — a deliberately broken template field reference fails `cargo build` (documented; not a runtime test).
+- **doctor extended (R-5):** `doctor` rejects a `serve.bind` resolving to `0.0.0.0`/non-CGNAT and passes on `${HOST_TS_IP}:8099` in `100.64.0.0/10` (extend the Task-2 doctor test; do not weaken the existing compose-port check).
+- vendored-asset test: `GET /static/htmx.min.js` and the CSS return 200 from `tower-http` (assets checked into the repo, no CDN).
+
+**Implementation.**
+- `serve/templates/{inventory,node,paths,observability}.html` (askama); `serve/routes.rs` HTML handlers.
+- vendored `crates/fleet/assets/{htmx.min.js,app.css}` served via `tower_http::services::ServeDir`; HTMX `hx-get` partial-refresh on the inventory table.
+- `doctor.rs`: add the `serve` bind to the set of addresses the bind-address preflight validates.
+
+**Acceptance.** HTML render + links-only + doctor-serve-bind + vendored-asset tests green; templates compile-checked. Commit.
+
+---
+
+## Task 18 — cloudflared tunnel + Cloudflare Access + serve LaunchAgent
+
+**Goal.** Wire remote ("hosted") access to `fleet serve` via the `cloudflared` tunnel fronted by Cloudflare Access (Zero Trust), and install the native `fleet serve` LaunchAgent on the Intel mini.
+
+**Tests to write first** (file/plist-level).
+- `deploy_test.rs::cloudflared_service_shape` — already asserted in Task 13 the service has no published port + token-from-env; here also assert `deploy/README.md` documents the ingress (`fleet.<domain>` → `http://${HOST_TS_IP}:8099`) and the Access policy.
+- `install_test.sh::serve_launchagent_present` — install emits a `com.caguabot.fleet.serve.plist` with `KeepAlive` true (long-running, not interval-scheduled) and `RunAtLoad`.
+
+**Implementation.**
+- `deploy/README.md`: the Cloudflare Access (Zero-Trust) setup — create the tunnel, set ingress `fleet.<domain> → http://${HOST_TS_IP}:8099`, attach an Access application with an operator-only identity policy; `FLEET_CF_TUNNEL_TOKEN` into `.env` (residual Q5). No public port.
+- `scripts/install.sh`: emit + load the `fleet serve` LaunchAgent (`KeepAlive`/`RunAtLoad`, runs the release `fleet serve`).
+
+**Acceptance.** cloudflared-doc + serve-LaunchAgent tests green; Access policy documented. Commit.
+
+---
+
 ## Done criteria
 
 - `cargo test --workspace` green; `cargo clippy -p fleet --all-targets -- -D warnings` and `cargo fmt --check` clean; `cargo audit` clean (no `serde_yaml`).
-- All nine verbs (`sync · enroll · cf-sync · export · probe · heartbeat · list · show · ssh`) plus `doctor` exist and are tested.
-- Every external surface is fixture-backed; the Kuma socket.io surface has a contract test **and** a non-ignored transport test; no test makes a live network call (except the optional ephemeral-Kuma CI container).
-- Security tests prove: injection-bearing hostnames are slugified/rejected, PocketBase filters bind, `fleet ssh` connects to a validated IP with `--`, and no secret (ntfy/CF token, hc.io ping-key) appears in any error output.
+- All ten verbs (`sync · enroll · cf-sync · export · probe · heartbeat · list · show · ssh · serve`) plus `doctor` exist and are tested.
+- Every external surface is fixture-backed; the Kuma socket.io surface has a contract test **and** a non-ignored transport test; `fleet serve` handlers are tested via axum `oneshot` against a seeded temp SQLite; no test makes a live network call (except the optional ephemeral-Kuma CI container).
+- `fleet serve` reads the registry SQLite **read-only over WAL** (no contention with the cron writer); the single pane up/down comes only from the registry-derived `online` (R-10) — `serve` links out to the Beszel/Kuma UIs, never scraping Kuma socket.io.
+- Security tests prove: injection-bearing hostnames are slugified/rejected, PocketBase filters bind, `fleet ssh` connects to a validated IP with `--`, the `${HOST_TS_IP}` compose **and** `:8099` serve binds are tailnet-only (no `0.0.0.0`), and no secret (ntfy/CF token, hc.io ping-key, CF tunnel token) appears in any error output.
 - Then run `/code-review`, address findings, and `superpowers:finishing-a-development-branch` to open the PR.
 
-The plan above is the deliverable. Spec build order (§9) is preserved one-to-one across Tasks 1–15; each task is test-first, self-contained, and ends in a single commit. External integrations using recorded fixtures are called out in the preamble table and reiterated per task (Tailscale/Beszel/Cloudflare/ntfy/healthchecks via wiremock JSON fixtures; Kuma via a recorded `MonitorSpec` payload fixture + replay frames; trippy never traced live).
+The plan above is the deliverable. Spec build order (§9) is preserved one-to-one across Tasks 1–18; each task is test-first, self-contained, and ends in a single commit. External integrations using recorded fixtures are called out in the preamble table and reiterated per task (Tailscale/Beszel/Cloudflare/ntfy/healthchecks via wiremock JSON fixtures; Kuma via a recorded `MonitorSpec` payload fixture + replay frames; trippy never traced live; `fleet serve` via axum `oneshot` over a seeded SQLite, no network).

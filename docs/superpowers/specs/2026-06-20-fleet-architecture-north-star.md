@@ -44,7 +44,7 @@ above plane 2 reads from plane 2.**
 | 2 | **Inventory / source of truth** | Fleet registry (git-tracked, SQLite-backed, fed by Tailscale API) | The shared spine. Monitor, orchestrator, provisioner all read *one* canonical "what exists." |
 | 3 | **Provisioning / config** | cloud-init + thin Ansible/Nix baseline | "Make-a-node-fleet-ready" in one command: installs Tailscale + monitoring agent + (later) Nomad client, registers the node. |
 | 4 | **Orchestration / scheduling** | **Nomad** (deferred) | Heterogeneous + mixed workloads (containers *and* raw batch *and* dev VMs), single binary, Tailscale-native, bursts to rented by joining a node. k8s is too heavy for a solo fleet of this shape. |
-| 5 | **Observability / monitoring** | Beszel + Uptime-Kuma + custom MTR prober + Homepage | The monitor. Reads its device list from the registry (plane 2), not its own list. |
+| 5 | **Observability / monitoring** | Beszel + Uptime-Kuma + custom MTR prober + custom `fleet serve` web UI (single pane, Cloudflare-Access-reachable) | The monitor. Reads its device list from the registry (plane 2), not its own list. |
 | 6 | **Access / secrets / cost** | Tailscale SSH + secrets approach (TBD) + capex-vs-opex ledger | Who can reach what; secret distribution; the accounting that says *when* to buy local vs rent. |
 
 ### Why Tailscale tags are load-bearing
@@ -107,10 +107,15 @@ natural extension of minimonitor's Rust `core`/`agent`:
 This keeps minimonitor focused on what only it can do, and is the differentiated 20%.
 
 ### Presentation — single pane of glass
-**Homepage (gethomepage)** — lightweight dashboard with native widgets for Uptime-Kuma,
-Beszel, Cloudflare, and Tailscale. One screen, every device/service green/red, per-client
-rollups. (Grafana/Prometheus is the *graduation* path if/when deep time-series across the
-fleet is wanted — deferred; it's operational weight a fleet this size doesn't need yet.)
+**A custom `fleet serve` web UI** (native Rust `axum` + `askama`, replacing the originally
+considered Homepage) — a thin read-only presentation layer over the registry's own SQLite, so
+the merged-tailnet node list, the per-hop MTR path health, and Cloudflare SSL/zone health (none
+of which any off-the-shelf widget covers) are first-class server-rendered pages, and the UI and
+CLI ride on one set of builders. Beszel and Kuma keep their own UIs for deep drill-down; the
+single pane links out to them. Reachable off-tailnet via a `cloudflared` tunnel fronted by
+**Cloudflare Access (Zero Trust)** — operator-only, no public port. (Grafana/Prometheus is the
+*graduation* path if/when deep time-series across the fleet is wanted — deferred; it's
+operational weight a fleet this size doesn't need yet.)
 
 ### Glue
 - **Tailscale discovery → registry → auto-enroll** into Kuma/Beszel. Fleet stays current
@@ -118,7 +123,9 @@ fleet is wanted — deferred; it's operational weight a fleet this size doesn't 
 - **Cloudflare puller** — SSL-expiry countdowns, zone health, analytics into the single pane.
 
 ### Alerting & the "who watches the watcher" gap
-- **Hub location: the Mac mini** (caguabot's choice — cheapest/simplest, already tailnet-connected).
+- **Hub location: the dedicated Intel Mac mini** (a new, not-yet-configured box that becomes the
+  monitor's host/server; the M4 mini is dev-only). Still macOS, so all macOS-specific mechanics
+  (Keychain, LaunchAgents, native-on-host prober) hold.
 - Alerts → phone via **ntfy / Pushover** (instant down + context).
 - **Mitigation for mini-only:** a **$0 external dead-man's-switch** (healthchecks.io / Better
   Stack free) the mini pings every minute. If the mini or its ISP dies — and the on-mini hub
@@ -133,13 +140,18 @@ Each phase = its own spec → plan → PR. Do **not** build as one platform.
 | Phase | Scope | When | Value |
 |-------|-------|------|-------|
 | **0** | Fabric tags + inventory registry | **now** | The spine. Non-regret. |
-| **1** | Observability on the registry (Beszel + Kuma + MTR prober + Homepage + alerts) | **now** | The original ask. Daily value; forces the registry to be real. |
+| **1** | Observability on the registry (Beszel + Kuma + MTR prober + custom `fleet serve` web UI + alerts) | **now** | The original ask. Daily value; forces the registry to be real. |
 | **2** | Provisioning baseline ("make-a-node-fleet-ready" in one command) | later | "Rent 5 Hetzners" / "add a local box" → 10 min, not a day. |
 | **3** | Nomad orchestration + burst-to-rented | later | Realizes "match local with rented." Commit only when manual placement hurts. |
 | **4** | Cost/access polish (capex-vs-opex ledger, secrets, SSH policy) | later | Decide *when* to buy local vs rent. |
 
 **Phase 0 + 1 bundle into the first buildable spec.** It *is* the monitor caguabot came in
 asking for — built on a registry spine so it survives the later planes.
+
+**Host note + a follow-on project:** Phase 0+1 runs on a **new dedicated Intel Mac mini** (the
+M4 becomes dev-only). Phase 0+1 only stands up the **monitor** on that box. **Migrating the M4's
+current services (cuentas, Command Center, tradingbot, etc.) onto the Intel mini is a separate
+follow-on project** — its own brainstorm → spec → plan → PR — and is *not* part of this build order.
 
 ---
 
@@ -148,8 +160,8 @@ asking for — built on a registry spine so it survives the later planes.
 - **Orchestrator (Nomad vs k3s vs Swarm).** Recommendation is Nomad, but the *commitment* is
   deferred to Phase 3. Nothing in Phase 0–1 depends on it; the registry + tags feed whatever
   wins. Choosing now would be premature.
-- **Grafana/Prometheus.** Deferred graduation path for deep time-series. Homepage covers the
-  single-pane need today at a fraction of the ops cost.
+- **Grafana/Prometheus.** Deferred graduation path for deep time-series. The custom `fleet serve`
+  web UI covers the single-pane need today at a fraction of the ops cost.
 - **Secrets management.** Real decision (Plane 6), deferred to Phase 4. Until then, existing
   per-project `.env` discipline holds.
 - **Multi-tenant metering/billing.** Explicitly out of scope — caguabot is *not* renting out
@@ -172,5 +184,6 @@ asking for — built on a registry spine so it survives the later planes.
 
 Build the **fabric tags + inventory registry** (non-regret spine) and the **observability
 plane on top of it** now; defer the orchestrator (Nomad) and provisioning until the registry
-is real and manual placement actually hurts. Buy the 80% (Beszel + Kuma + Homepage), build
-the differentiated 20% (the Rust per-hop path prober + the multi-account registry glue).
+is real and manual placement actually hurts. Buy the 80% (Beszel + Kuma + ntfy), build
+the differentiated 20% (the Rust per-hop path prober + the multi-account registry glue + the
+custom `fleet serve` single pane).

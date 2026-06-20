@@ -13,10 +13,12 @@
 
 This spec covers exactly two of the six planes from the north-star doc:
 
-- **Plane 2 — Inventory registry ("the non-regret spine"):** a single Rust CLI binary `fleet` that pulls every configured Tailscale tailnet, merges/dedupes the devices into one fleet view, stores it in SQLite, and exports a git-tracked snapshot. No daemon, no web service — a short-lived CLI run by cron/LaunchAgent on the Mac mini.
-- **Plane 5 — Observability:** a Docker stack of battle-tested FOSS (Beszel, Uptime-Kuma, Homepage, ntfy) on the mini behind the tailnet, plus the one custom-built insight piece — the per-hop MTR path prober (`fleet probe`) — and the external dead-man's-switch (`fleet heartbeat`).
+- **Plane 2 — Inventory registry ("the non-regret spine"):** a single Rust CLI binary `fleet` that pulls every configured Tailscale tailnet, merges/dedupes the devices into one fleet view, stores it in SQLite, and exports a git-tracked snapshot. The CLI verbs are short-lived (cron/LaunchAgent on the host); the **one** long-running daemon in the design is `fleet serve` (§3.8), the custom web UI.
+- **Plane 5 — Observability:** a Docker stack of battle-tested FOSS (Beszel, Uptime-Kuma, ntfy) on the host behind the tailnet, plus the one custom-built insight piece — the per-hop MTR path prober (`fleet probe`) — the external dead-man's-switch (`fleet heartbeat`), and the custom single-pane web UI `fleet serve` (a native Rust `axum` daemon, replacing Homepage). Remote ("hosted") access to the UI is via a `cloudflared` tunnel fronted by Cloudflare Access (Zero Trust) — no public port.
 
-The build philosophy is fixed: **buy the 80% (FOSS), build the differentiated 20% (the MTR prober + the cross-account registry merge).**
+The build philosophy is fixed: **buy the 80% (FOSS: Beszel + Kuma + ntfy), build the differentiated 20% (the MTR prober + the cross-account registry merge + the registry-derived `fleet serve` single pane).**
+
+**Host:** the hub/server is a **new, dedicated Intel Mac mini** (not yet configured at the time of writing). It still runs **macOS**, so every macOS-specific design decision in this spec stays valid (Keychain secret resolver, LaunchAgents, the native-on-host MTR caveat, `tailscale ip -4`). The **M4 Mac mini becomes development-only.** Only the box changes — the OS and all its reasoning do not.
 
 ### Explicitly out of scope
 
@@ -28,6 +30,7 @@ The build philosophy is fixed: **buy the 80% (FOSS), build the differentiated 20
 - **Cloudflare analytics (request/threat counts):** cut from Phase 0+1 (see §10, resolved risk R-9) — cf-sync is SSL-expiry + zone-health only.
 - **Per-monitor Kuma state folded into the export:** cut from Phase 0+1 (resolved risk R-10); the single-pane up/down is driven by the registry's own derived `online`.
 - **IPv6 path probing, ECMP multipath (paris/dublin):** v4-only, Classic strategy for Phase 1.
+- **Migrating the M4's current services to the Intel mini:** moving cuentas, Command Center, tradingbot, etc. from the M4 to the new Intel mini is a **separate follow-on project** (its own brainstorm → spec → plan → PR) and is **explicitly out of scope here.** This spec only establishes the Intel mini as the **monitor's** host; it does not migrate the rest of the M4 workload.
 
 ### Fleet reality this targets
 
@@ -38,36 +41,42 @@ The build philosophy is fixed: **buy the 80% (FOSS), build the differentiated 20
 ## 2. Architecture overview
 
 ```
-                       ┌──────────────────────── Mac mini (tailnet: js-mac-mini.tail82f3c6.ts.net) ─────────────────────────┐
+                       ┌──────────────── Intel Mac mini — dedicated host (tailnet: ${INTEL_MINI_HOST}) ────────────────────┐
                        │                                                                                                     │
   Tailscale API   ┐    │   NATIVE HOST BINARY  (LaunchAgent / cron, runs as the logged-in user)                             │
   (2-3 accounts)  ├───▶│   ┌────────────────────────────────────────────────────────────┐                                  │
   Cloudflare API  ┘    │   │  fleet  (crates/fleet, single static binary, reuses core)    │                                 │
                        │   │   sync · enroll · cf-sync · export · probe · heartbeat ·     │                                  │
-                       │   │   list · show · ssh                                          │                                  │
-                       │   │     state ─▶ SQLite (~/.local/state/fleet/fleet.db)          │                                  │
-                       │   │     export ─▶ fleet.yaml (git) + JSON into Homepage public/  │                                  │
+                       │   │   list · show · ssh · serve                                  │                                  │
+                       │   │     state ─▶ SQLite (~/.local/state/fleet/fleet.db, WAL)     │                                  │
+                       │   │     export ─▶ fleet.yaml (git-tracked snapshot)              │                                  │
                        │   └───┬───────────────┬───────────────┬───────────────┬─────────┘                                  │
-                       │       │ enroll        │ enroll        │ alerts        │ export files                                │
-                       │       ▼ (Beszel REST) ▼ (Kuma sio)    ▼ (ntfy POST)   ▼                                            │
-                       │   DOCKER STACK (docker-compose, all bound to the mini's 100.x tailnet IP only)                     │
-                       │   ┌─────────┐  ┌──────────────┐  ┌──────────┐  ┌───────────────────────┐                          │
-                       │   │ Beszel  │  │ Uptime-Kuma  │  │  ntfy    │  │ Homepage (single pane)│                          │
-                       │   │ :8090   │  │ :3001        │  │ :8082    │  │ :3000  reads exports  │                          │
-                       │   └────▲────┘  └──────────────┘  └────▲─────┘  └───────────────────────┘                          │
-                       │        │ outbound WS                  │ push                                                       │
-                       └────────┼──────────────────────────────┼─────────────────────────────────────────────────────────┘
-                  agent boxes ──┘ (push through NAT)            └──▶ phone (ntfy app on tailnet)
-                                                                        ▲
-  healthchecks.io (hosted SaaS, OFF-mini) ◀── fleet heartbeat (1/min) ──┘  alerts phone if the mini/ISP dies
+                       │       │ enroll        │ enroll        │ alerts        │ serve reads SQLite                          │
+                       │       ▼ (Beszel REST) ▼ (Kuma sio)    ▼ (ntfy POST)   │ READ-ONLY via WAL                           │
+                       │   DOCKER STACK (linux/amd64, docker-compose, bound to the host's 100.x tailnet IP only)            │
+                       │   ┌─────────┐  ┌──────────────┐  ┌──────────┐         ▼                                            │
+                       │   │ Beszel  │  │ Uptime-Kuma  │  │  ntfy    │   ┌──────────────────────────────┐                   │
+                       │   │ :8090   │  │ :3001        │  │ :8082    │   │ fleet serve (web UI :8099)   │ native axum daemon │
+                       │   └────▲────┘  └──────────────┘  └────▲─────┘   │  HTML + /api/* from registry │                   │
+                       │        │ outbound WS                  │ push    │  links to Beszel/Kuma UIs    │                   │
+                       │   ┌────────────┐                      │         └──────────┬───────────┘ tailnet :8099            │
+                       │   │ cloudflared│◀── proxies serve ────────────────────────────┘                                   │
+                       │   └─────┬──────┘ (compose svc)         │                                                            │
+                       └─────────┼─────────────────────────────┼────────────────────────────────────────────────────────────┘
+                 outbound tunnel │                             └──▶ phone (ntfy app on tailnet)
+                                 ▼                                       ▲
+  Cloudflare Access (Zero Trust) ──▶ fleet.<domain> ──▶ operator phone   │  (off-tailnet, authenticated; no public port)
+                                                                         │
+  healthchecks.io (hosted SaaS, OFF-host) ◀── fleet heartbeat (1/min) ───┘  alerts phone if the host/ISP dies
+  agent boxes ──(outbound WS, push through NAT)──▶ Beszel :8090
 ```
 
 **Key boundaries:**
 
-- **`fleet` runs natively on the host, never in Docker.** The MTR prober must see the Mac's *real* network path; a container on macOS traces the Docker-Desktop Linux VM's path instead (resolved risk R-1). All of `fleet` stays native so it shares one binary + one Keychain access path.
-- **The FOSS services run in Docker.** Their network vantage is irrelevant to them.
-- **State lives in SQLite + a git-tracked YAML export.** No database server, no web backend in `fleet`.
-- **Tailnet is the perimeter.** Tailscale ACLs gate access; container ports bind to the mini's `100.x` IP only (defense in depth), and an install-time preflight hard-fails on a wildcard bind (resolved risk R-5).
+- **`fleet` runs natively on the host, never in Docker.** The MTR prober must see the Mac's *real* network path; a container on macOS traces the Docker-Desktop Linux VM's path instead (resolved risk R-1) — this caveat holds identically on the **Intel** mini (still macOS, still Docker-Desktop). All of `fleet` — including the `serve` web daemon — stays native so it shares one binary + one Keychain access path + one SQLite file.
+- **The FOSS services run in Docker** (now `linux/amd64` images, since the host is Intel). Their network vantage is irrelevant to them.
+- **State lives in SQLite + a git-tracked YAML export.** No database server. There is now **exactly one web daemon, `fleet serve`** (§3.8) — a thin read-only presentation layer over the same SQLite the CLI writes; it holds no separate state and is the only long-running `fleet` process. Everything else in `fleet` is short-lived CLI.
+- **Tailnet is the perimeter.** Tailscale ACLs gate access; container ports **and** the `fleet serve` port bind to the host's `100.x` IP only (defense in depth), and an install-time preflight hard-fails on a wildcard bind (resolved risk R-5). The single off-tailnet path is the `cloudflared` → Cloudflare Access tunnel for `fleet serve`, gated to the operator identity (no public port).
 
 **Tag schema** (fixed by north-star §2, four facets parsed from Tailscale's flat `tag:<facet>-<value>` strings): `role` (host|worker|dev|inference|nas|router|hub), `owner` (self|client-`<name>`), `site` (local|rented|cloud-`<provider>`), `gpu` (none|`<model>`). Attributes Tailscale can't hold live in a git-tracked `fleet-overrides.yaml`.
 
@@ -101,6 +110,10 @@ serde_yaml_ng = "0.9"
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 thiserror = "2"
+# --- fleet serve (the one web daemon) ---
+axum = "0.8"
+askama = "0.13"                                       # compile-time templates; bring its axum integration in fleet
+tower-http = { version = "0.6", features = ["fs"] }   # static asset serving (vendored CSS/HTMX)
 ```
 
 **Dependency justifications (high confidence):**
@@ -111,6 +124,7 @@ thiserror = "2"
 - `figment` — layered `fleet.toml` + `FLEET_*` env (secrets via env, never in the git TOML).
 - `chrono` with `serde` — Tailscale `lastSeen` is RFC3339 with **non-UTC offsets**; must parse offset-aware then normalize to UTC or get hours of skew.
 - `trippy-core` (probe; pinned `=0.13.x`, see §5) and `rust_socketio` (Kuma; see §3.7) are the two explicitly-unstable deps, each isolated behind a thin adapter.
+- `axum 0.8` + `askama 0.13` + `tower-http 0.6` (`fleet serve`, §3.8) — `askama` compiles HTML templates **at build time** (type-safe, no runtime template files, no Node/npm step); `tower-http`'s `fs` feature serves the vendored CSS + HTMX JS as static assets; HTMX is a single vendored JS file. All three are pure-Rust over `tokio`/`hyper` (already in-tree via reqwest) — they keep the **"no C system deps beyond libc / boring static binary"** property (no OpenSSL, no system libs).
 - `wiremock 0.6` (dev) — async-native `MockServer`, matches reqwest+tokio, parallel-safe; not mockito.
 
 **`crates/fleet/Cargo.toml`:**
@@ -143,18 +157,22 @@ async-trait = "0.1"
 rust_socketio = { version = "0.6", features = ["async"] }
 trippy-core = "=0.13.0"          # explicitly-unstable API; exact pin, see §5 / R-7
 ipnet = "2"                       # CGNAT-range / bind-address validation (R-5)
+axum = { workspace = true }       # fleet serve (§3.8)
+askama = { workspace = true }     # compile-time HTML templates (with axum integration)
+tower-http = { workspace = true } # static asset serving for vendored CSS/HTMX
 
 [dev-dependencies]
 wiremock = "0.6"
 tokio = { workspace = true }
 tempfile = "3"
+tower = "0.5"                     # ServiceExt::oneshot for axum handler tests (no live bind)
 ```
 
 **Module layout** (`crates/fleet/src/`) — every unstable external surface behind a thin mockable boundary; all *logic* pure-testable:
 
 ```
 main.rs            #[tokio::main]; parse Cli; load config; open db; dispatch
-cli.rs             clap Parser/Subcommand (the 9 verbs)
+cli.rs             clap Parser/Subcommand (the 10 verbs)
 config.rs          figment load -> typed Config; fleet.toml + FLEET_* env; secret resolver (R-8)
 secrets.rs         resolve order: FLEET_* env -> Keychain -> hard error (R-8); redaction helper (R-6)
 model.rs           Node, Tier, Tags, ProbeRun, ProbeHop, CfZone; fleet_id validation (R-3)
@@ -169,10 +187,13 @@ beszel.rs          PocketBase client; parameterized filters (R-2)
 kuma/mod.rs        KumaClient trait + reconcile() (pure) + sio impl (designed, §3.7)
 cloudflare.rs      read-only CF REST (zones + cert packs only; no GraphQL)
 probe.rs           trippy-core adapter (unprivileged) + aggregation + evaluate() (pure)
-export.rs          build Homepage export struct -> JSON/YAML (schema-locked)
+export.rs          build export struct -> JSON (schema-locked) + YAML snapshot; REUSED by serve /api/*
 alert.rs           ntfy publish + healthchecks ping (redacted on error)
-doctor.rs          preflight: bind-address + secret-resolvability checks (R-5/R-8)
-commands/*.rs      one module per subcommand orchestrating the above
+doctor.rs          preflight: bind-address (compose ports + serve port) + secret-resolvability checks (R-5/R-8)
+serve/mod.rs       axum app builder; read-only DB pool; bind ${HOST_TS_IP}:8099; the ONE long-running daemon
+serve/routes.rs    HTML handlers (askama) + JSON /api/* handlers (reuse export.rs builders); axum oneshot-testable
+serve/templates/   askama compile-time templates (inventory, node, paths, observability)
+commands/*.rs      one module per subcommand orchestrating the above (incl. commands/serve.rs)
 ```
 
 Discipline: `merge`, `overrides::apply`, tag parsing, `online` derivation, `kuma::reconcile`, `probe::evaluate`, `export::build`, the CF `min(expires_on)` fold, and the delete-guard are **pure functions over in-memory structs** — the bulk of the test weight, zero network. Network clients take an injectable base URL so wiremock fixtures stand in.
@@ -279,7 +300,6 @@ The day-one differentiator. No Tailscale id is globally stable across accounts: 
 # fleet.toml  (git-tracked; secrets are env/Keychain-resolved)
 db_path           = "~/.local/state/fleet/fleet.db"
 export_yaml_path  = "~/Desktop/1/tools/minimonitor/fleet.yaml"        # git-tracked snapshot (stable fields only, R-export)
-export_dir        = "~/Desktop/1/tools/minimonitor/deploy/homepage/fleet"  # JSON served to Homepage
 online_threshold_secs = 900
 ssh_user          = "caguabot"
 include_unauthorized = false
@@ -298,13 +318,13 @@ oauth_secret_env = "FLEET_TS_ACME_SECRET"
 tailnet = "-"
 
 [beszel]
-url = "http://js-mac-mini.tail82f3c6.ts.net:8090"
+url = "http://${INTEL_MINI_HOST}:8090"
 user = "caguabot@example.com"                # PocketBase `users` collection (NOT _superusers)
 password_env = "FLEET_BESZEL_PASSWORD"
 agent_port = 45876
 
 [kuma]
-url = "http://js-mac-mini.tail82f3c6.ts.net:3001"
+url = "http://${INTEL_MINI_HOST}:3001"
 user = "caguabot"
 password_env = "FLEET_KUMA_PASSWORD"
 ntfy_notification_id = 1                      # Kuma notification id to wire monitors to
@@ -314,9 +334,14 @@ token_env = "FLEET_CF_TOKEN"                 # read-only: Zone:Read, SSL and Cer
 ssl_warn_days = 14
 
 [ntfy]
-base_url = "http://js-mac-mini.tail82f3c6.ts.net:8082"
+base_url = "http://${INTEL_MINI_HOST}:8082"
 topic = "fleet"
 token_env = "FLEET_NTFY_TOKEN"
+
+[serve]                                        # the one long-running daemon (§3.8)
+bind = "8099"                                  # bound to ${HOST_TS_IP}:8099 (tailnet-only, R-5)
+beszel_ui_url = "http://${INTEL_MINI_HOST}:8090"   # deep-drill-down link target (NOT polled)
+kuma_ui_url   = "http://${INTEL_MINI_HOST}:3001"   # deep-drill-down link target (NOT polled)
 
 [healthchecks]
 ping_key_env = "FLEET_HC_PING_KEY"           # SECRET — never logged (R-6)
@@ -363,7 +388,7 @@ nodes:                              # per-node attribute layering, keyed by flee
 
 ### 3.6 SQLite DDL
 
-Single file (`db_path`), `PRAGMA foreign_keys=ON`, `journal_mode=WAL` on open, schema in `PRAGMA user_version` via `rusqlite_migration`. `M001` baseline:
+Single file (`db_path`), `PRAGMA foreign_keys=ON`, `journal_mode=WAL` on open, schema in `PRAGMA user_version` via `rusqlite_migration`. **WAL is load-bearing for `fleet serve` (§3.8):** it lets the long-running `serve` daemon hold READ-ONLY connections that read concurrently while the cron CLI (`sync`/`enroll`/`probe`/`cf-sync`) WRITES, with no reader-writer contention — the writer never blocks readers under WAL. `serve` opens read-only (`OpenFlags::SQLITE_OPEN_READ_ONLY`, `PRAGMA query_only=ON`), one connection per request (cheap at 15–40 rows). `M001` baseline:
 
 ```sql
 -- M001 ------------------------------------------------------------------
@@ -554,7 +579,7 @@ pub async fn reconcile(c: &impl KumaClient, want: &[MonitorSpec], guard_pct: u8)
 
 #### `fleet cf-sync` — read-only Cloudflare pull
 
-SSL-expiry + zone-health into `cf_zone`. **REST only — no GraphQL analytics (R-9).** Inputs: `[cloudflare]` token, `ssl_warn_days`. Outputs: upserted `cf_zone`; ntfy alert when any zone's `min_cert_expiry` is within `ssl_warn_days` or a zone goes unhealthy. Lives in `fleet` (not a Homepage widget) because **Homepage has no native widget for SSL-expiry/zone-health** (only `cloudflared` tunnel health).
+SSL-expiry + zone-health into `cf_zone`. **REST only — no GraphQL analytics (R-9).** Inputs: `[cloudflare]` token, `ssl_warn_days`. Outputs: upserted `cf_zone`; ntfy alert when any zone's `min_cert_expiry` is within `ssl_warn_days` or a zone goes unhealthy. Lives in `fleet` (the cf data is surfaced by `fleet serve`'s `/observability` view and `/api/cf`, §3.8) because **no off-the-shelf single-pane gives SSL-expiry/zone-health for the merged fleet** — it is part of the differentiated build.
 
 Every CF response is an envelope — **check `success` AND `errors`** (HTTP 200 can carry `success:false`):
 1. Preflight `GET /user/tokens/verify`.
@@ -564,9 +589,11 @@ Every CF response is an envelope — **check `success` AND `errors`** (HTTP 200 
 
 **Token scope (minimal, read-only):** Zone:Read, SSL and Certificates:Read, "All zones from an account." No Edit, no Analytics.
 
-#### `fleet export` — the Homepage single-pane JSON
+#### `fleet export` — the git-tracked YAML snapshot
 
-Writes `fleet.json` / `path-health.json` / `cf.json` into `export_dir` (the host side of the Homepage `public/` bind mount, §4) so Homepage's backend reaches them at `http://localhost:3000/fleet/*.json`. Schema is a **frozen, fixtures-tested contract** (Homepage `customapi` dotted field-paths are brittle to renames; a schema-lock test asserts the depended-on keys never silently rename):
+`fleet export` now writes **only** the git-tracked, human-reviewable `fleet.yaml` snapshot (stable fields, R-export; this is the same writer `fleet sync` already invokes in step 8). **The live JSON the dashboard consumes is no longer a static file** — it is served straight from SQLite by `fleet serve`'s `/api/*` endpoints (§3.8), which reuse the exact same `export.rs` builder structs. So the CLI `--json` output, the served `/api/*` JSON, and the YAML snapshot are **one source of truth**, built from one set of builders.
+
+The JSON **shape** (`export.rs` builders) is unchanged and remains a **frozen, fixtures-tested contract** (the schema-lock test now points at the `/api/*` endpoints rather than at static files):
 
 ```json
 {
@@ -579,7 +606,7 @@ Writes `fleet.json` / `path-health.json` / `cf.json` into `export_dir` (the host
 }
 ```
 
-`online`/`healthy`/`breached`/`severity` are emitted so Homepage `remap`/`color: adaptive` work directly. **Single-pane up/down is driven by the registry's own derived `online` (R-10)** — `fleet export` does **not** read Kuma socket.io for per-node status (that would re-expose the most fragile surface for dashboard cosmetics); the native coarse `uptimekuma` rollup widget covers aggregate Kuma health. `path-health.json` carries the latest probe run's destination-hop summary with precomputed `severity`. `cf.json` carries `{zones: [{name, status, healthy, ssl_days_left}]}`.
+`online`/`healthy`/`breached`/`severity` are emitted so the UI can render status directly. **Single-pane up/down is driven by the registry's own derived `online` (R-10)** — neither `export` nor `serve` reads Kuma socket.io for per-node status (that would re-expose the most fragile surface for dashboard cosmetics); aggregate Kuma/Beszel health is reached by linking out to their own UIs. The `/api/path-health` payload carries the latest probe run's destination-hop summary with precomputed `severity`. `/api/cf` carries `{zones: [{name, status, healthy, ssl_days_left}]}`.
 
 #### `fleet probe` — the custom MTR per-hop path prober
 
@@ -589,20 +616,56 @@ See §5 (the prober is the differentiated build and gets its own section).
 
 See §6.
 
+### 3.8 `fleet serve` — the custom single-pane web UI (the one daemon)
+
+The **10th subcommand** and the design's **only long-running process** — a native Rust web daemon that replaces Homepage entirely. Everything else in `fleet` stays short-lived CLI; `serve` is the single exception. It runs **natively on the Intel mini as a LaunchAgent** (not in Docker — same one-binary / one-Keychain / one-SQLite discipline as the rest of `fleet`, §2).
+
+**Why custom, not Homepage:** Homepage's native widgets are coarse and there is no native widget for the merged-tailnet node list, the per-hop MTR path health, or Cloudflare SSL/zone health — the fleet-wide views always had to ride on brittle `customapi` panels reading static export files. Serving the same data directly from the registry's SQLite, in a type-safe Rust binary that reuses the CLI's own builders, removes the static-file round-trip and the brittle dotted-path coupling, and makes the UI and CLI **literally one source of truth**.
+
+**Stack (single Rust binary, no Node/npm build step):**
+- `axum 0.8` — the HTTP server.
+- `askama 0.13` — **compile-time** HTML templates (type-safe; a template referencing a missing field fails the build, not a request). Templates live in `serve/templates/*.html`, compiled into the binary — no runtime template files to ship.
+- `tower-http 0.6` (`fs`) — serves the **vendored** CSS + HTMX JS as static assets (HTMX is one vendored `.js` file checked into the repo; no CDN, no npm).
+- A little **HTMX** for partial refresh (e.g. polling the inventory table) — progressive-enhancement only; the pages render fully server-side without JS.
+- Keeps the **"no C system deps beyond libc / boring static binary"** property — all three crates are pure-Rust over the already-in-tree `tokio`/`hyper`.
+
+**Data access — read-only over WAL:** `serve` reads the **same SQLite** the CLI writes. It opens **read-only** connections (`SQLITE_OPEN_READ_ONLY` + `PRAGMA query_only=ON`), one per request (trivial at 15–40 rows). WAL (§3.6) is what makes this safe and contention-free: the cron CLI keeps WRITING (`sync`/`enroll`/`probe`/`cf-sync`) while `serve` READS concurrently, the writer never blocking readers. `serve` holds **no state of its own** — it is a pure presentation layer over the registry.
+
+**Routes:**
+
+*HTML (askama, server-rendered):*
+| Route | Mirrors | Content |
+|---|---|---|
+| `/` | `fleet list` | Inventory: merged-tailnet node table (hostname, tier, online ●/○ from derived `online`, site, role, owner, relative last_seen, `~` fuzzy marker). HTMX-refreshable. |
+| `/node/{id}` | `fleet show` | Node detail: facets, every `seen_in` pair, addresses, `dedupe_key_kind`, enrollment status, last probe summary. |
+| `/paths` | `fleet probe` data | MTR path-health: latest run per target, destination-hop loss%/RTT, `severity`. |
+| `/observability` | — | CF zones (from `cf_zone`) + SSL-expiry countdowns + the registry-derived `online` rollup + **deep-drill-down links out to the Beszel and Kuma UIs**. |
+
+*JSON API (reuses `export.rs` builder structs — same data as CLI `--json`):*
+`/api/fleet`, `/api/node/{id}`, `/api/path-health`, `/api/cf`. These ARE the live JSON that the old static-file export served to Homepage; they are now built on demand from SQLite, so UI and CLI move "hand in hand" off one set of builders.
+
+**The R-10 discipline is preserved:** the inventory/single-pane up/down comes **only** from the registry's own derived `online` — `serve` does **NOT** poll Kuma's socket.io for display. Beszel and Kuma keep their own UIs for deep drill-down; `/observability` **links** to them but never live-scrapes them.
+
+**Bind (tailnet-only, R-5):** `serve` binds `${HOST_TS_IP}:8099` — the host's `100.x` tailnet IP only, never a wildcard. The existing `fleet doctor` bind-address preflight (R-5) is **extended** to also cover the `serve` port (8099), with the same CGNAT-membership / no-`0.0.0.0` rule — strengthened, not weakened.
+
+**Remote ("hosted") access via Cloudflare:** a **`cloudflared`** tunnel exposes `fleet.<domain>` to the operator's phone off-tailnet, fronted by **Cloudflare Access (Zero Trust)** so only the authenticated operator identity gets in — **no public port, no inbound exposure.** The tunnel runs as a `linux/amd64` compose service (`cloudflare/cloudflared`, pinned) with its token from env (`FLEET_CF_TUNNEL_TOKEN`); it connects outbound to Cloudflare and proxies to `serve` on the tailnet. This also advances the operator's "unify everything behind Cloudflare" goal. (The old Homepage CF tunnel env vars — `CF_TUNNEL_ID`/`CF_TUNNEL_TOKEN` for the Homepage container — are removed; `FLEET_CF_TUNNEL_TOKEN` replaces them.)
+
+**Testing (no live network):** handlers are exercised via axum `oneshot` (`tower::ServiceExt`) against a **seeded temp SQLite** (`tempfile`) — assert `/` renders the seeded nodes, `/node/{id}` the detail, `/api/*` the expected JSON. askama templates are **compile-checked** (a bad field reference fails `cargo build`). The JSON **schema-lock contract test** (R-testability) is retained but now points at the `/api/*` endpoints. No test binds a real socket or reaches the network.
+
 ---
 
-## 4. Observability stack (Docker on the mini)
+## 4. Observability stack (Docker on the host)
 
-Four services, one compose file in `tools/minimonitor/deploy/` (git-tracked; `.env` git-ignored). All pinned, all bound to the mini's `100.x` tailnet IP only. **Kuma 1.23.x, not 2.0** (boring-stack choice; gates the enroll client lib).
+Three FOSS services + one tunnel, one compose file in `tools/minimonitor/deploy/` (git-tracked; `.env` git-ignored). All `linux/amd64` images (the host is the **Intel** mini), all pinned, all FOSS ports bound to the host's `100.x` tailnet IP only. **Kuma 1.23.x, not 2.0** (boring-stack choice; gates the enroll client lib). The custom single pane is **not** in this compose — it is `fleet serve` (§3.8), a native LaunchAgent.
 
 ```yaml
-# tools/minimonitor/deploy/docker-compose.yml
+# tools/minimonitor/deploy/docker-compose.yml   (all images linux/amd64 — Intel host)
 name: fleet-observability
 services:
   beszel:
-    image: henrygd/beszel:0.9.1               # PIN; re-record fixtures on bump
+    image: henrygd/beszel:0.9.1               # PIN (linux/amd64); re-record fixtures on bump
     restart: unless-stopped
-    ports: ["${MINI_TS_IP}:8090:8090"]        # tailnet IP only, never 0.0.0.0 (templated, R-5)
+    ports: ["${HOST_TS_IP}:8090:8090"]        # tailnet IP only, never 0.0.0.0 (templated, R-5)
     volumes: ["./beszel_data:/beszel_data"]
     healthcheck:
       test: ["CMD","wget","-qO-","http://localhost:8090/api/health"]
@@ -611,122 +674,48 @@ services:
       retries: 3
 
   uptime-kuma:
-    image: louislam/uptime-kuma:1.23.16       # PIN to 1.23.x (NOT 2.0)
+    image: louislam/uptime-kuma:1.23.16       # PIN to 1.23.x (NOT 2.0), linux/amd64
     restart: unless-stopped
     cap_add: ["NET_RAW"]                       # required: Kuma's ICMP 'ping' monitor needs it
-    ports: ["${MINI_TS_IP}:3001:3001"]
+    ports: ["${HOST_TS_IP}:3001:3001"]
     volumes: ["./kuma_data:/app/data"]
 
-  homepage:
-    image: ghcr.io/gethomepage/homepage:v0.10.9  # PIN; customapi behavior shifts across releases
-    restart: unless-stopped
-    ports: ["${MINI_TS_IP}:3000:3000"]
-    volumes:
-      - ./homepage/config:/app/config
-      - ./homepage/fleet:/app/public/fleet:ro    # fleet export served as static files (§3.7 export)
-    environment:
-      HOMEPAGE_ALLOWED_HOSTS: "js-mac-mini.tail82f3c6.ts.net:3000"
-      HOMEPAGE_VAR_BESZEL_USER: ${BESZEL_HOMEPAGE_USER}
-      HOMEPAGE_VAR_BESZEL_PASS: ${BESZEL_HOMEPAGE_PASS}
-      HOMEPAGE_VAR_CF_ACCOUNT: ${CF_ACCOUNT_ID}
-      HOMEPAGE_VAR_CF_TUNNEL: ${CF_TUNNEL_ID}
-      HOMEPAGE_VAR_CF_TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN}
-    env_file: [".env"]
-
   ntfy:
-    image: binwiederhier/ntfy:v2.11.0          # PIN
+    image: binwiederhier/ntfy:v2.11.0          # PIN (linux/amd64)
     restart: unless-stopped
     command: serve
-    ports: ["${MINI_TS_IP}:8082:80"]           # tailnet-only; phone must be on tailnet (§6)
+    ports: ["${HOST_TS_IP}:8082:80"]           # tailnet-only; phone must be on tailnet (§6)
     environment:
-      NTFY_BASE_URL: "http://js-mac-mini.tail82f3c6.ts.net:8082"
+      NTFY_BASE_URL: "http://${INTEL_MINI_HOST}:8082"
       NTFY_AUTH_FILE: /var/lib/ntfy/user.db
       NTFY_AUTH_DEFAULT_ACCESS: deny-all        # private: nothing readable without a token
     volumes: ["./ntfy:/var/lib/ntfy"]
+
+  cloudflared:                                  # remote access to fleet serve (§3.8) — no public port
+    image: cloudflare/cloudflared:2024.12.2     # PIN (linux/amd64)
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${FLEET_CF_TUNNEL_TOKEN}    # named tunnel; fronts fleet.<domain> via Cloudflare Access
+    # connects OUTBOUND to Cloudflare and proxies to fleet serve on ${HOST_TS_IP}:8099 (host tailnet);
+    # ingress (fleet.<domain> -> http://${HOST_TS_IP}:8099) + Access policy configured in the CF dashboard.
+    env_file: [".env"]
 ```
 
-**Ports** (all on `${MINI_TS_IP}`): Beszel `8090`, Kuma `3001`, Homepage `3000`, ntfy `8082→80`. Beszel **agents** (on owned boxes, §4.2) listen `45876` and connect *outbound* — no inbound port on agent boxes.
+**Ports** (FOSS services on `${HOST_TS_IP}`): Beszel `8090`, Kuma `3001`, ntfy `8082→80`. The custom single pane, `fleet serve`, binds `${HOST_TS_IP}:8099` **natively** (not a container, §3.8). `cloudflared` publishes **no** inbound port (outbound tunnel only). Beszel **agents** (on owned boxes, §4.2) listen `45876` and connect *outbound* — no inbound port on agent boxes.
 
-**`${MINI_TS_IP}` is templated from `tailscale ip -4` at install time and install hard-fails on empty (R-5)** — never defaulting to a `0.0.0.0` wildcard. The `fleet doctor` preflight (run by `install.sh` before `compose up`) parses the compose file and fails if any published port resolves to `0.0.0.0` or a non-CGNAT (`100.64.0.0/10`) address.
+**`${HOST_TS_IP}` is templated from `tailscale ip -4` at install time and install hard-fails on empty (R-5)** — never defaulting to a `0.0.0.0` wildcard. It is the **Intel mini's** tailnet IP. The `fleet doctor` preflight (run by `install.sh` before `compose up`) parses the compose file and fails if any published port resolves to `0.0.0.0` or a non-CGNAT (`100.64.0.0/10`) address — and the same check covers the native `fleet serve` `:8099` bind (§3.8).
 
-### 4.1 Homepage single-pane config
+### 4.1 The single pane is `fleet serve` (not a container)
 
-Two hard constraints shape this: (1) native widgets are coarse — `uptimekuma` scrapes one status-page slug (aggregate only), `tailscale` is per-device-single-tailnet (useless for a merged fleet), and there is **no native Cloudflare SSL/zone widget**; so the **fleet-wide views ride on `customapi` panels reading the export**. (2) Homepage's *backend* makes the call, so the URL must be container-reachable — solved by serving the export as static files under `public/` (verified against the pinned v0.10.9; **if that image does not statically serve `/app/public`, the fallback is a tiny caddy sidecar** — R-14).
-
-```yaml
-# deploy/homepage/config/services.yaml
-- Fleet:
-    - Fleet Nodes:                       # CUSTOM: merged tailnet-wide node list (registry export)
-        icon: mdi-server-network
-        widget:
-          type: customapi
-          url: http://localhost:3000/fleet/fleet.json
-          refreshInterval: 60000
-          display: dynamic-list
-          mappings:
-            items: nodes
-            name: hostname
-            label: site
-            limit: 60
-            additionalField:
-              field: online              # registry-derived (NOT Kuma, NOT TS API)
-              color: adaptive
-              remap:
-                - { value: 1, to: up }
-                - { value: 0, to: down }
-                - { any: true, to: "?" }
-
-    - Path Health:                       # CUSTOM: per-hop MTR panel (the built 20%)
-        icon: mdi-transit-connection-variant
-        widget:
-          type: customapi
-          url: http://localhost:3000/fleet/path-health.json
-          refreshInterval: 300000        # matches probe cadence
-          display: dynamic-list
-          mappings:
-            items: hops
-            name: host
-            label: hop
-            additionalField:
-              field: severity            # ok|warn|breach precomputed in fleet probe
-              color: adaptive
-              remap:
-                - { value: ok,     to: OK }
-                - { value: warn,   to: WARN }
-                - { value: breach, to: BREACH }
-
-    - Agentless (Uptime-Kuma):           # NATIVE coarse rollup
-        widget: { type: uptimekuma, url: http://uptime-kuma:3001, slug: fleet }
-
-    - Agent tier (Beszel):               # NATIVE all-systems overview
-        widget:
-          type: beszel
-          url: http://beszel:8090
-          username: "{{HOMEPAGE_VAR_BESZEL_USER}}"
-          password: "{{HOMEPAGE_VAR_BESZEL_PASS}}"
-          version: 2
-
-    - SSL & Zones (Cloudflare):          # CUSTOM: SSL-expiry + zone health from cf-sync export
-        widget:
-          type: customapi
-          url: http://localhost:3000/fleet/cf.json
-          refreshInterval: 600000
-          display: dynamic-list
-          mappings:
-            items: zones
-            name: name
-            label: status
-            additionalField: { field: ssl_days_left, color: adaptive }
-```
-
-Secrets in `services.yaml` are `{{HOMEPAGE_VAR_*}}` references only (the file is git-tracked); substitution is from `.env` at container start. Rotation = edit `.env` + `docker compose up -d homepage`.
+The merged-tailnet single pane is the custom `fleet serve` web UI (§3.8), a native Rust `axum` daemon reading the registry SQLite directly — **not** a dashboard container in this compose. The fleet-wide views (merged node list, MTR path health, Cloudflare SSL/zone health) that no off-the-shelf widget covers are first-class server-rendered pages there; Beszel and Kuma keep their own UIs for deep drill-down and `fleet serve`'s `/observability` page links out to them. See §3.8 for routes, the read-only-over-WAL data path, the `:8099` tailnet bind, and the `cloudflared` + Cloudflare Access remote-access path.
 
 ### 4.2 Beszel agent rollout (agent tier, push-through-NAT)
 
 Enrollment model: **universal-token / WebSocket (push-through-NAT), NOT the SSH-key model** (the SSH model needs the hub to connect inbound to each agent — fails behind NAT). **Do NOT shell out to `install-agent.sh`** (it demands an SSH key even with a universal token); run the Docker agent directly:
 
 ```yaml
-# per owned box (NOT the mini hub): beszel-agent
+# per owned box (NOT the Intel mini hub): beszel-agent  (image arch matches each box)
 services:
   beszel-agent:
     image: henrygd/beszel-agent:0.9.1     # PIN to match the hub
@@ -735,11 +724,11 @@ services:
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
     environment:
       LISTEN: 45876
-      HUB_URL: http://js-mac-mini.tail82f3c6.ts.net:8090
+      HUB_URL: http://${INTEL_MINI_HOST}:8090
       TOKEN: ${BESZEL_BOOTSTRAP_TOKEN}     # ONE-TIME bootstrap, not a live credential (R-15)
 ```
 
-The agent connects outbound, self-registers a `systems` record on first connect, and thereafter uses its **persistent per-agent credential**. `fleet enroll` enables the universal token **only on-demand** when a not-yet-registered desired agent node is detected (R-15), so the token doesn't rotate every cycle and stale every agent's baked-in env. Auth for enroll's hub calls uses the PocketBase `users` collection (not `_superusers`); the Homepage Beszel widget separately needs a *superuser* account (a different credential).
+The agent connects outbound, self-registers a `systems` record on first connect, and thereafter uses its **persistent per-agent credential**. `fleet enroll` enables the universal token **only on-demand** when a not-yet-registered desired agent node is detected (R-15), so the token doesn't rotate every cycle and stale every agent's baked-in env. Auth for enroll's hub calls uses the PocketBase `users` collection (not `_superusers`).
 
 ---
 
@@ -763,7 +752,7 @@ let tracer = trippy_core::Builder::new(target_addr)
 
 A **startup self-check** opens the unprivileged dgram-ICMP socket and **fails loudly** if it can't, rather than silently producing empty traces (R-6). v4-only for Phase 1 (a second socket + dual-stack target logic is deferred).
 
-**Targets** — two explicit path classes (a `100.x` Tailscale IP traces the WireGuard/DERP **overlay**, a public IP traces the internet **underlay**): pinned `[[probe.target]]` + registry-derived `[[probe.selector]]`, each tagged `path` and stored on `probe_run` so Homepage shows both planes distinctly.
+**Targets** — two explicit path classes (a `100.x` Tailscale IP traces the WireGuard/DERP **overlay**, a public IP traces the internet **underlay**): pinned `[[probe.target]]` + registry-derived `[[probe.selector]]`, each tagged `path` and stored on `probe_run` so `fleet serve`'s `/paths` view shows both planes distinctly.
 
 **Per run, per target:** run `cycles` ICMP rounds → aggregate `Vec<HopStat>` → write one `probe_run` + N `probe_hop` rows (SQLite is sync — fine, done via `spawn_blocking`) → evaluate alert policy → ntfy on breach. **Retention runs in its own transaction at command start (R-13)** so a breach early-return never skips GC.
 
@@ -776,7 +765,7 @@ fn evaluate(hops: &[HopStat], loss_pct: f64, rtt_ms: f64) -> Option<Alert> {
 }
 ```
 
-Loss/RTT alerts fire **only on the destination hop**, never intermediates. Non-responding intermediates are stored as 100% loss (informational) but never alerted. Each hop gets a `severity` (`ok`/`warn` at 0.7× threshold/`breach`) written into `path-health.json` so Homepage just remaps a string — thresholding stays server-side. On breach, `fleet probe` POSTs to ntfy with target/hop/loss%/RTT at priority 4.
+Loss/RTT alerts fire **only on the destination hop**, never intermediates. Non-responding intermediates are stored as 100% loss (informational) but never alerted. Each hop gets a `severity` (`ok`/`warn` at 0.7× threshold/`breach`) computed server-side and surfaced via `/api/path-health` so the `fleet serve` UI just renders a string — thresholding stays server-side. On breach, `fleet probe` POSTs to ntfy with target/hop/loss%/RTT at priority 4.
 
 ---
 
@@ -786,20 +775,20 @@ Loss/RTT alerts fire **only on the destination hop**, never intermediates. Non-r
 
 | Source | Config | Mechanism |
 |---|---|---|
-| **Beszel** (CPU/down/temp) | Beszel UI (Shoutrrr) | `ntfy://:<token>@js-mac-mini.tail82f3c6.ts.net:8082/fleet` — no glue code |
+| **Beszel** (CPU/down/temp) | Beszel UI (Shoutrrr) | `ntfy://:<token>@${INTEL_MINI_HOST}:8082/fleet` — no glue code |
 | **Uptime-Kuma** (agentless up/down) | Kuma UI → Notifications → ntfy | server URL `…:8082`, topic `fleet`, access token — no glue code |
 | **`fleet` CLI** (probe breach, sync/enroll/cf failures) | native binary, JSON POST to ntfy root | token from Keychain |
 
 ```rust
 // alert.rs — fleet's only direct publishing
 let token = secrets::resolve("FLEET_NTFY_TOKEN", "fleet-ntfy-token")?;
-reqwest::Client::new().post("http://js-mac-mini.tail82f3c6.ts.net:8082/")
+reqwest::Client::new().post(format!("http://{}:8082/", cfg.ntfy_host))   // ${INTEL_MINI_HOST}
     .bearer_auth(token)
     .json(&serde_json::json!({
         "topic": "fleet", "title": "probe breach",
         "message": "path to client-acme-prod: dest hop loss 30% (>20%), avg 410ms",
         "priority": 4, "tags": ["warning"],
-        "click": "http://js-mac-mini.tail82f3c6.ts.net:3000/"
+        "click": format!("http://{}:8099/paths", cfg.serve_host)   // fleet serve, ${INTEL_MINI_HOST}
     }))
     .send().await.map_err(redact)?    // R-6: never surface tokenized URL/headers
     .error_for_status().map_err(redact)?;
@@ -831,7 +820,7 @@ async fn heartbeat(ping_key: &str, slug: &str) -> anyhow::Result<()> {
 | Consumer | Store | Holds |
 |---|---|---|
 | Native `fleet` CLI | macOS Keychain via `security`, OR `FLEET_*` env | Tailscale OAuth secrets, Beszel password, CF token, ntfy token, hc.io ping-key |
-| Docker stack | git-ignored `.env` (chmod 600), via compose `env_file`/`environment` | ntfy token, Beszel-for-Homepage superuser, CF tunnel ids |
+| Docker stack | git-ignored `.env` (chmod 600), via compose `env_file`/`environment` | ntfy token, `FLEET_CF_TUNNEL_TOKEN` (cloudflared tunnel for `fleet serve`) |
 
 **Resolution order (R-8), deterministic and loud:** `FLEET_*` env **first**, then Keychain, then **hard error**. A missing secret is a LOUD failure (non-zero exit) that still pages via the hc.io dead-man's-switch (whose ping_key is env-resolvable, not Keychain-dependent).
 
@@ -850,9 +839,9 @@ pub fn resolve(env_var: &str, keychain_service: &str) -> anyhow::Result<String> 
 
 **Redaction (R-6):** a redaction helper strips Authorization headers and tokenized URLs (CF token, ntfy token, **hc.io ping-key in the URL path**) from every error before it reaches logs/stderr/anyhow chains. Unit-tested: `heartbeat` error `Display` must exclude the ping_key.
 
-**`.gitignore` (shipped as task 1, R-5):** the current repo `.gitignore` is only `/target` + `.DS_Store`. Add `deploy/.env`, `deploy/*_data/`, `deploy/ntfy/`, `deploy/homepage/fleet/*.json`. A committed `gitleaks`/ripgrep CI check scans tracked files for `tk_`, `Bearer`, `client_secret`. The `fleet.yaml` export is schema-frozen so no secret-bearing field can appear; `fleet.toml` is git-tracked but carries only non-secret ids/endpoints (the repo must stay private; sensitive ids can move behind env later).
+**`.gitignore` (shipped as task 1, R-5):** the current repo `.gitignore` is only `/target` + `.DS_Store`. Add `deploy/.env`, `deploy/*_data/`, `deploy/ntfy/`. (The old `deploy/homepage/fleet/*.json` static-export pattern is dropped — Homepage is gone and `fleet serve` serves JSON from SQLite, not files.) A committed `gitleaks`/ripgrep CI check scans tracked files for `tk_`, `Bearer`, `client_secret`. The `fleet.yaml` export is schema-frozen so no secret-bearing field can appear; `fleet.toml` is git-tracked but carries only non-secret ids/endpoints (the repo must stay private; sensitive ids can move behind env later).
 
-**Rotation runbook** (tokens live in multiple places): ntfy token → Keychain + `.env` + Beszel UI + Kuma UI; Tailscale OAuth → rotate client secret in Keychain only (OAuth clients don't expire like 90-day PATs); CF token → Keychain + `.env`; Beszel-for-Homepage superuser → `.env` only. **sops/age explicitly NOT adopted** (net-negative key-management for a solo op; deferred to the plane-6 secrets decision).
+**Rotation runbook** (tokens live in multiple places): ntfy token → Keychain + `.env` + Beszel UI + Kuma UI; Tailscale OAuth → rotate client secret in Keychain only (OAuth clients don't expire like 90-day PATs); CF token → Keychain + `.env`; `FLEET_CF_TUNNEL_TOKEN` (cloudflared) → `.env` only (rotate by recreating the tunnel token in the CF dashboard). **sops/age explicitly NOT adopted** (net-negative key-management for a solo op; deferred to the plane-6 secrets decision).
 
 ---
 
@@ -874,7 +863,7 @@ pub fn resolve(env_var: &str, keychain_service: &str) -> anyhow::Result<String> 
 
 **Security tests (R-2/R-3):** a hostname containing quotes/semicolons/backticks/leading-`-` must be slugified/rejected; the PocketBase filter call must **bind** (params object) not concatenate; `fleet ssh` argv for a `-`-prefixed fqdn must connect to a validated IP with a `--` separator, never pass the crafted name as an option.
 
-**Version-pinning discipline (standing requirement, documented re-record triggers):** Kuma 1.23.16, Beszel 0.9.1 hub+agent, `trippy-core =0.13.0`, Homepage v0.10.9, ntfy v2.11.0, and the CF account plan (determines cert-pack shape).
+**Version-pinning discipline (standing requirement, documented re-record triggers):** Kuma 1.23.16, Beszel 0.9.1 hub+agent, `trippy-core =0.13.0`, ntfy v2.11.0, `cloudflared` (pinned tag), and the CF account plan (determines cert-pack shape). (`fleet serve`'s axum/askama/tower-http are normal versioned deps, not external-service pins.)
 
 ---
 
@@ -882,21 +871,24 @@ pub fn resolve(env_var: &str, keychain_service: &str) -> anyhow::Result<String> 
 
 Each numbered step is **one commit**, TDD (test first). Steps are ordered so each builds on a tested foundation; the registry spine lands before anything depends on it.
 
-1. **Repo hygiene + scaffold.** Ship the `.gitignore` additions (`deploy/.env`, `deploy/*_data/`, `deploy/ntfy/`, `deploy/homepage/fleet/*.json`) and the gitleaks CI check. Add `crates/fleet` to the workspace, hoist deps, empty binary that parses `--version`.
+1. **Repo hygiene + scaffold.** Ship the `.gitignore` additions (`deploy/.env`, `deploy/*_data/`, `deploy/ntfy/`) and the gitleaks CI check. Add `crates/fleet` to the workspace, hoist deps, empty binary that parses `--version`.
 2. **Config + secrets + doctor.** `config.rs` (figment), `secrets.rs` (env→Keychain→error resolver + redaction), `doctor.rs` (bind-address CGNAT check, secret-resolvability check). Tests: resolver precedence, missing-secret loud error, redaction excludes ping_key.
 3. **Model + DDL + migrations.** `model.rs` (with `FleetId` validation/slugify), `db/mod.rs` migrations (M001), `db/nodes.rs` upsert/list/get. Tests: `fleet_id` rejects injection chars; migration applies; round-trip upsert.
 4. **Tailscale client + merge (pure).** `tailscale.rs` (OAuth + devices, base_url injectable), `merge.rs`. Fixture-backed tests: same machineKey across two accounts (clean merge), wiped-state via alias, two colliding-hostname boxes must NOT merge, external/unauthorized filtering, offset-bearing `lastSeen` normalization, fuzzy synthetic-id minting + re-link on rename.
 5. **`fleet sync`.** Wire pull→merge→overrides→upsert→epoch-scoped sweep→`fleet.yaml`. Tests: additive on account failure, epoch sweep set-difference, stale-not-deleted, volatile fields excluded from YAML.
 6. **`fleet list` / `show` / `ssh`.** Pure reads + safe ssh argv. Tests: `--tag`/`--online` recompute; ssh argv for `-`-prefixed fqdn connects to validated IP with `--`.
-7. **`fleet export` + schema lock.** Build `fleet.json`/`cf.json`/`path-health.json`; freeze schema test. (cf/path files empty-but-valid until their commands land.)
+7. **`fleet export` builders + schema lock.** Build the export structs (`fleet`/`cf`/`path-health` JSON shapes) reused by both CLI `--json` and `fleet serve` `/api/*`, plus the git-tracked `fleet.yaml` snapshot writer; freeze schema test. (cf/path shapes empty-but-valid until their commands land.) No static files served.
 8. **`fleet cf-sync`.** REST zones + cert-packs (`status=all`), nested `min(expires_on)`, SSL-warn ntfy. Fixture tests: envelope `success:false`, nested min, threshold alert.
 9. **`fleet probe`.** trippy adapter (unprivileged/Classic + startup self-check), aggregation, `evaluate()` (destination-hop-only), severity, retention-at-start, breach ntfy, `path-health.json`. Tests per §8 probe.
 10. **`fleet heartbeat`.** hc.io slug-ping `?create=1`, env-resolvable ping_key, redacted errors. Tests: URL built with `?create=1`, non-2xx → non-zero, ping_key never in error output.
 11. **Beszel enroll.** PocketBase `users` auth (raw token), parameterized filter match-on-self-reported-identity, backfill/PATCH, decommission under 40% guard, on-demand universal-token enable. Fixture tests: idempotent (no dup on re-run), guard aborts mass-delete.
 12. **Kuma enroll (socket.io).** `kuma/sio.rs` connect/login-ack/await-`monitorList`/emit-with-ack; `reconcile()`; `MonitorSpec` contract fixture; delete-guard boundaries; one non-ignored transport/replay test.
-13. **Docker stack + Homepage config.** `deploy/docker-compose.yml` (pinned, `${MINI_TS_IP}` templated), `services.yaml` (customapi + native), `.env.example`. Verify Homepage v0.10.9 serves `public/fleet/*.json` (else add caddy sidecar).
+13. **Docker stack.** `deploy/docker-compose.yml` (pinned `linux/amd64` Beszel + Kuma + ntfy + cloudflared, `${HOST_TS_IP}` templated), `.env.example`. No Homepage. Tests: compose binds tailnet-only, images pinned, Kuma has `NET_RAW`, cloudflared has no published port.
 14. **Beszel agent rollout doc + compose.** Per-box agent compose (one-time bootstrap token), push-through-NAT verification.
-15. **Install + scheduling.** Extend `scripts/install.sh`: `fleet doctor` → template `${MINI_TS_IP}` (hard-fail empty) → `docker compose up -d` → install LaunchAgents. Schedule: `heartbeat` 60s, `sync`/`enroll`/`probe` 300s (offset), `cf-sync` 900s, `export` chained after sync/probe/cf-sync. Boot order: stack up → sync → enroll → probe/cf-sync → export.
+15. **Install + scheduling.** Extend `scripts/install.sh`: `fleet doctor` → template `${HOST_TS_IP}` (hard-fail empty) → `docker compose up -d` → install LaunchAgents. Schedule: `heartbeat` 60s, `sync`/`enroll`/`probe` 300s (offset), `cf-sync` 900s, `export` chained after sync/probe/cf-sync. Boot order: stack up → sync → enroll → probe/cf-sync → export.
+16. **`fleet serve` skeleton + JSON API.** The 10th verb + the one long-running daemon: `serve/mod.rs` axum app, **read-only WAL open** of the registry SQLite (`SQLITE_OPEN_READ_ONLY` + `query_only`, one conn/request), and the `/api/fleet` · `/api/node/{id}` · `/api/path-health` · `/api/cf` JSON endpoints **reusing the step-7 `export.rs` builders**. Tests: axum `oneshot` against a seeded temp SQLite (no live bind); the schema-lock contract test (R-testability) repointed at `/api/*`.
+17. **`fleet serve` HTML views + HTMX.** askama templates for `/` (inventory, mirrors `fleet list`), `/node/{id}` (mirrors `fleet show`), `/paths` (MTR), `/observability` (CF zones + Beszel/Kuma deep-links + registry `online` rollup); vendored CSS + HTMX (`tower-http` static) for partial refresh; **extend `fleet doctor`'s bind-address check to the `:8099` serve port** (R-5, strengthened). Tests: oneshot render assertions; templates compile-checked; doctor rejects a wildcard serve bind.
+18. **cloudflared tunnel + Cloudflare Access + serve LaunchAgent.** Wire the `cloudflared` compose service (pinned, `FLEET_CF_TUNNEL_TOKEN`), document the Cloudflare Access (Zero Trust) policy fronting `fleet.<domain>` (operator-only, no public port), and install the `fleet serve` LaunchAgent (`KeepAlive`, native on the Intel mini). Tests: compose cloudflared service shape; plist presence for `serve`.
 
 ---
 
@@ -908,26 +900,27 @@ Each numbered step is **one commit**, TDD (test first). Steps are ordered so eac
 - **R-2 (must) Beszel enroll create-by-fleet_id raced the agent's self-registration.** Resolved: agents self-register; enroll **matches on the agent's self-reported identity and only backfills/PATCHes**, never blind-creating by `fleet_id`. PocketBase filters are **parameterized**, not interpolated.
 - **R-3 / R-2 (must) injection via attacker-controlled hostnames** (PocketBase filter + ssh argv). Resolved: `FleetId` validation `^[A-Za-z0-9._:-]+$` + hostname slugify; ssh connects to a parsed `IpAddr` with `user@IP` as separate argv and a `--` separator; parameterized PocketBase filters.
 - **R-4 (must) the multi-tailnet sweep had no algorithm.** Resolved: added `node_seen.last_confirmed_run` + a `sync_run.accounts_ok` epoch; sweep = per-succeeded-account set-difference of unconfirmed rows; a node goes stale only when all `seen_in` are gone across succeeded accounts; stale is marked, never auto-deleted.
-- **R-5 (must) `.gitignore` didn't match the real repo; never-public not enforced.** Resolved: `.gitignore` additions + gitleaks shipped as build step 1; `${MINI_TS_IP}` templated from `tailscale ip -4` with install hard-fail on empty; `fleet doctor` rejects `0.0.0.0`/non-CGNAT binds before `compose up`.
+- **R-5 (must) `.gitignore` didn't match the real repo; never-public not enforced.** Resolved: `.gitignore` additions + gitleaks shipped as build step 1; `${HOST_TS_IP}` templated from `tailscale ip -4` with install hard-fail on empty; `fleet doctor` rejects `0.0.0.0`/non-CGNAT binds before `compose up` and on the native `fleet serve` `:8099` bind.
 - **R-6 (should) trippy unprivileged was overstated; credential-in-URL leakage.** Resolved: `PrivilegeMode::Unprivileged` + `MultipathStrategy::Classic` set explicitly, v4-only, with a loud startup socket self-check; redaction helper strips the hc.io ping-key and all tokens/headers from errors (unit-tested).
 - **R-7 (should) trippy-core API is explicitly unstable.** Resolved: pinned `=0.13.0` exact, isolated behind the single `probe.rs` adapter, upgrades gated behind a compile+test checkpoint; vendoring is the documented fallback.
 - **R-8 (should) Keychain failure = silent observability regression.** Resolved: deterministic resolver (env→Keychain→hard error), missing-secret is a loud non-zero exit, the dead-man's-switch ping_key is env-resolvable so it pages even when Keychain is locked; `fleet doctor` preflights resolvability.
 - **R-9 (should, yagni) Cloudflare analytics was scope creep.** Resolved: cut. cf-sync is REST-only (zones + cert-packs); no GraphQL, no Account Analytics scope, no `requests_7d`/`threats_7d`.
-- **R-10 (should, yagni) per-monitor Kuma fold re-exposed the fragile surface for cosmetics.** Resolved: single-pane up/down is driven by the registry's own derived `online`; `export` does not read Kuma socket.io. Native coarse rollup covers aggregate Kuma health.
+- **R-10 (should, yagni) per-monitor Kuma fold re-exposed the fragile surface for cosmetics.** Resolved: single-pane up/down is driven by the registry's own derived `online`; neither `export` nor `fleet serve` reads Kuma socket.io for display. `fleet serve`'s `/observability` links out to the Kuma UI for aggregate/deep Kuma health rather than scraping it.
 - **R-11 (nice, feasibility) fuzzy fleet_id was unstable across rename.** Resolved: fuzzy boxes mint a synthetic stable id on first sight; the `fz:` string is a re-link hint only, so a rename re-links rather than forking; promotion to an explicit alias is recommended.
 - **R-12 (nice) export had two serializers churning git.** Resolved: `fleet.yaml` excludes volatile fields (`last_seen`/`online`/`updated_at`); served JSON carries them. Delete-guard is a hardcoded 40% constant, not a `fleet.toml` knob.
 - **R-13 (nice) retention sweep could be skipped on breach early-return.** Resolved: retention runs in its own transaction at command start.
-- **R-14 (nice) Homepage static-serve claim was version-specific.** Resolved: verify v0.10.9 serves `/app/public/fleet/*.json`; documented caddy sidecar fallback if not.
+- **R-14 (nice) Homepage static-serve claim was version-specific.** **Moot: Homepage dropped** in favor of the custom `fleet serve` web UI (§3.8). There is no static-export-into-a-container path anymore — `fleet serve` reads SQLite directly and serves both HTML and `/api/*` JSON, so the version-specific `/app/public` static-serve question (and its caddy-sidecar fallback) no longer exists.
 - **R-15 (should, security) universal-token re-enabled every run staled agents + widened registration.** Resolved: token is a one-time bootstrap enabled **on-demand only** when a not-yet-registered desired agent node exists; registered agents use a persistent per-agent credential; enroll tests the "no new nodes → do not enable" branch.
 - **Cross-owner alias + probe false-positives** also resolved inline (§3.4 owner guard; §5 destination-hop-only policy).
-- **Misc yagni trims:** dropped `--site` flag (use `--tag site:`); per-job hc.io checks deferred to a documented add-on; `first_seen` retained (consumed by `fleet show` provenance) — every other model field/flag is read by at least one of the 9 verbs.
+- **Misc yagni trims:** dropped `--site` flag (use `--tag site:`); per-job hc.io checks deferred to a documented add-on; `first_seen` retained (consumed by `fleet show` provenance) — every other model field/flag is read by at least one of the 10 verbs.
 
 ### Residual open questions (resolve during execution / confirm with operator)
 
 1. **machineKey cleanliness** — do caguabot's dual-tailnet boxes share a state dir (clean merge) or were re-joined fresh (need alias entries)? Resolve by running `fleet sync` once and inspecting the fuzzy-flagged count; drives how much `fleet-overrides.yaml` aliasing is needed day-one.
 2. **Beszel agent self-registered `name`** — confirm the exact value the pinned `henrygd/beszel-agent:0.9.1` sets on self-registration against the live hub, to lock enroll's match key.
 3. **Kuma 1.23.x socket.io frame shapes** — record the exact login-ack/`monitorList`/add-edit-delete frames for 1.23.16 to back the contract + replay tests.
-4. **Homepage `public/` static-serve** — confirm v0.10.9 serves the export files in-container (else add the caddy sidecar).
-5. **Phone-on-tailnet** for ntfy push delivery — confirm, else add an upstream-relay path.
-6. **Operator-tunable starting points** — probe cadence/cycles (10/5min), thresholds (20% / 250ms dest-hop), hc.io timezone (`America/Mexico_City` assumed), and the mini's `100.x` IP (filled at install from `tailscale ip -4`).
-7. **Simultaneous Beszel registration at 15–40 nodes** — if shared-bootstrap-token registration causes `code=1000` disconnects, fall back to per-host fingerprint tokens (deferred unless observed).
+4. **Intel mini bring-up identity** — the new Intel mini's **MagicDNS name (`${INTEL_MINI_HOST}`) and its `100.x` tailnet IP (`${HOST_TS_IP}`) are unknown until the box is configured.** Set both at box bring-up: `${HOST_TS_IP}` is templated from `tailscale ip -4` at install; `${INTEL_MINI_HOST}` is filled into `fleet.toml`/`.env`/the CF tunnel ingress once the mini joins the tailnet. (The M4's old `js-mac-mini.tail82f3c6.ts.net` no longer applies — the M4 is dev-only.)
+5. **Cloudflare Access policy for `fleet serve`** — confirm the Zero-Trust Access application + identity policy fronting `fleet.<domain>` (operator email / device posture) and that `cloudflared` ingress maps to `${HOST_TS_IP}:8099`.
+6. **Phone-on-tailnet** for ntfy push delivery — confirm, else add an upstream-relay path. (Off-tailnet *dashboard* access is covered by the Cloudflare Access tunnel; ntfy push is separate.)
+7. **Operator-tunable starting points** — probe cadence/cycles (10/5min), thresholds (20% / 250ms dest-hop), hc.io timezone (`America/Mexico_City` assumed), and the host's `100.x` IP (filled at install from `tailscale ip -4` on the Intel mini).
+8. **Simultaneous Beszel registration at 15–40 nodes** — if shared-bootstrap-token registration causes `code=1000` disconnects, fall back to per-host fingerprint tokens (deferred unless observed).

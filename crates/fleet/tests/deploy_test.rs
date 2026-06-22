@@ -203,6 +203,10 @@ fn compose_has_no_homepage() {
 
 /// cloudflared service: publishes no port (outbound tunnel only), reads its
 /// token from `${FLEET_CF_TUNNEL_TOKEN}` — never a literal token value.
+///
+/// Task-18 additions: deploy/README.md must document:
+///   - the ingress mapping `fleet.<domain>` → `http://${HOST_TS_IP}:8099`
+///   - the Cloudflare Access (Zero Trust) policy for operator-only access
 #[test]
 fn compose_cloudflared_no_published_port() {
     let text = compose_text();
@@ -236,6 +240,39 @@ fn compose_cloudflared_no_published_port() {
     assert!(
         text.contains("${FLEET_CF_TUNNEL_TOKEN}") || text.contains("FLEET_CF_TUNNEL_TOKEN"),
         "compose file must reference FLEET_CF_TUNNEL_TOKEN for the cloudflared tunnel token"
+    );
+}
+
+/// Task-18: deploy/README.md must document the cloudflared tunnel ingress and
+/// the Cloudflare Access (Zero Trust) policy for operator-only remote access.
+///
+/// Spec §3.8: the ingress maps `fleet.<domain>` → `http://${HOST_TS_IP}:8099`,
+/// fronted by Cloudflare Access so only the authenticated operator gets in.
+/// Residual Q5 is a doc-only step — this test pins the documentation contract.
+#[test]
+fn cloudflared_service_shape() {
+    let readme_path = workspace_root().join("deploy").join("README.md");
+    let readme = std::fs::read_to_string(&readme_path)
+        .unwrap_or_else(|e| panic!("deploy/README.md must exist: {e}"));
+
+    // Ingress mapping: fleet.<domain> → http://${HOST_TS_IP}:8099
+    // The README must contain the domain-pattern and the serve endpoint together.
+    assert!(
+        readme.contains("fleet.<domain>"),
+        "deploy/README.md must document the cloudflared ingress mapping for \
+         `fleet.<domain>`; not found in README"
+    );
+    assert!(
+        readme.contains("http://${HOST_TS_IP}:8099"),
+        "deploy/README.md must document the ingress target \
+         `http://${{HOST_TS_IP}}:8099`; not found in README"
+    );
+
+    // Cloudflare Access (Zero Trust) policy — must be mentioned
+    assert!(
+        readme.contains("Access") || readme.contains("Zero Trust") || readme.contains("Zero-Trust"),
+        "deploy/README.md must document the Cloudflare Access (Zero-Trust) \
+         operator-only policy; not found in README"
     );
 }
 

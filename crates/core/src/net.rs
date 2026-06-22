@@ -25,8 +25,18 @@ pub fn parse_listen_line(line: &str) -> Option<PortRow> {
     // NAME is addr:port (no "->" for LISTEN). Split on the last ':'.
     let (addr, port_str) = name.rsplit_once(':')?;
     let port: u16 = port_str.parse().ok()?;
-    let bind = if addr.is_empty() { "*".to_owned() } else { addr.to_owned() };
-    Some(PortRow { port, proto, process: parts[0].to_owned(), pid, bind })
+    let bind = if addr.is_empty() {
+        "*".to_owned()
+    } else {
+        addr.to_owned()
+    };
+    Some(PortRow {
+        port,
+        proto,
+        process: parts[0].to_owned(),
+        pid,
+        bind,
+    })
 }
 
 pub fn parse_listen_output(output: &str) -> Vec<PortRow> {
@@ -34,7 +44,10 @@ pub fn parse_listen_output(output: &str) -> Vec<PortRow> {
 }
 
 pub fn listening_ports() -> Vec<PortRow> {
-    let Ok(out) = Command::new("lsof").args(["-nP", "-iTCP", "-sTCP:LISTEN"]).output() else {
+    let Ok(out) = Command::new("lsof")
+        .args(["-nP", "-iTCP", "-sTCP:LISTEN"])
+        .output()
+    else {
         return Vec::new();
     };
     parse_listen_output(&String::from_utf8_lossy(&out.stdout))
@@ -54,16 +67,26 @@ pub fn parse_estab_output(output: &str) -> Vec<ConnGroup> {
         if parts.len() < 9 {
             continue;
         }
-        let Ok(pid) = parts[1].parse::<u32>() else { continue };
+        let Ok(pid) = parts[1].parse::<u32>() else {
+            continue;
+        };
         *counts.entry((parts[0].to_owned(), pid)).or_insert(0) += 1;
     }
-    counts.into_iter()
-        .map(|((process, pid), count)| ConnGroup { process, pid, count })
+    counts
+        .into_iter()
+        .map(|((process, pid), count)| ConnGroup {
+            process,
+            pid,
+            count,
+        })
         .collect()
 }
 
 pub fn established_connections() -> Vec<ConnGroup> {
-    let Ok(out) = Command::new("lsof").args(["-nP", "-iTCP", "-sTCP:ESTABLISHED"]).output() else {
+    let Ok(out) = Command::new("lsof")
+        .args(["-nP", "-iTCP", "-sTCP:ESTABLISHED"])
+        .output()
+    else {
         return Vec::new();
     };
     parse_estab_output(&String::from_utf8_lossy(&out.stdout))
@@ -87,13 +110,18 @@ fn first_line(cmd: &str, args: &[&str]) -> Option<String> {
 
 /// The interface carrying the default route (e.g. "en0", "en1"), per `route get default`.
 fn default_interface() -> Option<String> {
-    let out = Command::new("route").args(["-n", "get", "default"]).output().ok()?;
+    let out = Command::new("route")
+        .args(["-n", "get", "default"])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("interface:").map(|s| s.trim().to_owned()))
+    String::from_utf8_lossy(&out.stdout).lines().find_map(|l| {
+        l.trim()
+            .strip_prefix("interface:")
+            .map(|s| s.trim().to_owned())
+    })
 }
 
 /// IPv4 of the active interface — the default-route one first, then common fallbacks.
@@ -127,12 +155,19 @@ mod tests {
 
     #[test]
     fn parses_ipv4_listen_line() {
-        let line = "node      8412 caguabot   23u  IPv4 0x1234      0t0  TCP 127.0.0.1:3000 (LISTEN)";
+        let line =
+            "node      8412 caguabot   23u  IPv4 0x1234      0t0  TCP 127.0.0.1:3000 (LISTEN)";
         let row = parse_listen_line(line).unwrap();
-        assert_eq!(row, PortRow {
-            port: 3000, proto: "TCP".into(), process: "node".into(),
-            pid: 8412, bind: "127.0.0.1".into(),
-        });
+        assert_eq!(
+            row,
+            PortRow {
+                port: 3000,
+                proto: "TCP".into(),
+                process: "node".into(),
+                pid: 8412,
+                bind: "127.0.0.1".into(),
+            }
+        );
     }
 
     #[test]
@@ -168,7 +203,10 @@ mod tests {
         let mut groups = parse_estab_output(out);
         groups.sort_by(|a, b| b.count.cmp(&a.count));
         assert_eq!(groups.len(), 2);
-        assert_eq!((groups[0].process.as_str(), groups[0].pid, groups[0].count), ("firefox", 700, 2));
+        assert_eq!(
+            (groups[0].process.as_str(), groups[0].pid, groups[0].count),
+            ("firefox", 700, 2)
+        );
         assert_eq!((groups[1].process.as_str(), groups[1].count), ("claude", 1));
     }
 }

@@ -1,0 +1,38 @@
+[package]
+name = "fleet"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "fleet"
+path = "src/main.rs"
+
+[dependencies]
+minimonitor-core = { path = "../core" }
+clap = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+rusqlite_migration = { workspace = true }
+figment = { workspace = true }
+serde_yaml_ng = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+axum = { workspace = true }
+askama = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+ipnet = { workspace = true }
+trippy-core = "=0.13.0"
+# rust_socketio: deferred to Task 12 (Kuma) — pulls native-tls/OpenSSL, decision owned there
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+tokio = { workspace = true }
+tower = { workspace = true }

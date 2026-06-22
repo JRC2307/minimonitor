@@ -17,6 +17,11 @@ pub struct Node {
     pub notes: Option<String>,
     pub first_seen: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// The `fz:...` re-link hint for fuzzy-merged boxes, persisted to
+    /// `node_seen.fuzzy_hint` and reloaded into [`crate::merge::PriorIds`] at the
+    /// next sync. `None` for machinekey/alias nodes. Never exported to YAML.
+    #[serde(skip)]
+    pub fuzzy_hint: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -186,9 +191,51 @@ pub fn slugify(s: &str) -> String {
     out
 }
 
+/// Parse Tailscale's flat `tag:<facet>-<value>` strings into the four
+/// [`Tags`] facets (spec §3.2). Known facet prefixes are `role-`, `owner-`,
+/// `site-`, `gpu-`; the substring after the prefix is the value. A `tag:`
+/// prefix on the raw string is stripped first. Unmatched tags are dropped from
+/// the facets (they remain in `raw` via the caller). Last-write-wins per facet.
+pub fn parse_tags(raw: &[String]) -> Tags {
+    let mut tags = Tags {
+        raw: raw.to_vec(),
+        ..Tags::default()
+    };
+    for t in raw {
+        let body = t.strip_prefix("tag:").unwrap_or(t);
+        if let Some(v) = body.strip_prefix("role-") {
+            tags.role = Some(v.to_owned());
+        } else if let Some(v) = body.strip_prefix("owner-") {
+            tags.owner = Some(v.to_owned());
+        } else if let Some(v) = body.strip_prefix("site-") {
+            tags.site = Some(v.to_owned());
+        } else if let Some(v) = body.strip_prefix("gpu-") {
+            tags.gpu = Some(v.to_owned());
+        }
+    }
+    tags
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_tags_extracts_facets() {
+        let raw = vec![
+            "tag:role-worker".to_owned(),
+            "tag:owner-client-acme".to_owned(),
+            "tag:site-local".to_owned(),
+            "tag:gpu-none".to_owned(),
+            "tag:unrelated".to_owned(),
+        ];
+        let t = parse_tags(&raw);
+        assert_eq!(t.role.as_deref(), Some("worker"));
+        assert_eq!(t.owner.as_deref(), Some("client-acme"));
+        assert_eq!(t.site.as_deref(), Some("local"));
+        assert_eq!(t.gpu.as_deref(), Some("none"));
+        assert_eq!(t.raw.len(), 5, "raw retains all tags");
+    }
 
     #[test]
     fn fleet_id_accepts_valid() {

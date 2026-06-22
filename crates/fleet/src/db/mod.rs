@@ -86,6 +86,11 @@ CREATE TABLE cf_zone (
 );
 ";
 
+/// M002: add a `stale` flag to `node`. A node goes stale when all of its
+/// `node_seen` provenance rows have been swept (the box vanished from every
+/// tailnet) — it is kept, not deleted, so its history/enrollments survive.
+const M002: &str = "ALTER TABLE node ADD COLUMN stale INTEGER NOT NULL DEFAULT 0;";
+
 pub fn open(path: &std::path::Path) -> anyhow::Result<Connection> {
     let mut conn =
         Connection::open(path).with_context(|| format!("opening sqlite at {}", path.display()))?;
@@ -93,12 +98,37 @@ pub fn open(path: &std::path::Path) -> anyhow::Result<Connection> {
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
         .context("setting PRAGMAs")?;
 
-    let migrations = Migrations::new(vec![M::up(M001)]);
+    let migrations = Migrations::new(vec![M::up(M001), M::up(M002)]);
     migrations
         .to_latest(&mut conn)
         .context("running migrations")?;
 
     Ok(conn)
+}
+
+/// Insert a new sync run row (with the current timestamp) and return its id.
+pub fn insert_sync_run(conn: &Connection) -> anyhow::Result<i64> {
+    conn.execute(
+        "INSERT INTO sync_run (ts) VALUES (?1)",
+        [chrono::Utc::now().to_rfc3339()],
+    )
+    .context("insert sync_run")?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Record which accounts succeeded for a sync run (JSON array in `accounts_ok`).
+pub fn update_sync_run_accounts(
+    conn: &Connection,
+    run_id: i64,
+    accounts: &[String],
+) -> anyhow::Result<()> {
+    let json = serde_json::to_string(accounts).context("serializing accounts_ok")?;
+    conn.execute(
+        "UPDATE sync_run SET accounts_ok = ?1 WHERE id = ?2",
+        rusqlite::params![json, run_id],
+    )
+    .context("update_sync_run_accounts")?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -120,7 +150,7 @@ mod tests {
         let ver: i32 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(ver, 1, "user_version should be 1 after M001");
+        assert_eq!(ver, 2, "user_version should be 2 after M001+M002");
 
         // Check all 7 tables exist
         let expected = [
@@ -205,5 +235,27 @@ mod tests {
             )
             .unwrap();
         assert_eq!(enr_count, 0, "enrollment should cascade delete");
+    }
+
+    #[test]
+    fn sync_run_insert_and_accounts() {
+        let (_f, conn) = open_temp();
+        let run_id = insert_sync_run(&conn).unwrap();
+        assert!(run_id >= 1);
+        update_sync_run_accounts(
+            &conn,
+            run_id,
+            &["personal".to_owned(), "client-acme".to_owned()],
+        )
+        .unwrap();
+        let json: String = conn
+            .query_row(
+                "SELECT accounts_ok FROM sync_run WHERE id=?1",
+                [run_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let accounts: Vec<String> = serde_json::from_str(&json).unwrap();
+        assert_eq!(accounts, vec!["personal", "client-acme"]);
     }
 }

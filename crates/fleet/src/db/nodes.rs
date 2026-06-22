@@ -45,7 +45,8 @@ pub fn upsert_node(conn: &Connection, node: &Node) -> anyhow::Result<()> {
             dedupe_key_kind = excluded.dedupe_key_kind,
             notes           = excluded.notes,
             first_seen      = first_seen,
-            updated_at      = excluded.updated_at",
+            updated_at      = excluded.updated_at,
+            stale           = 0",
         params![
             node.fleet_id,
             node.hostname,
@@ -69,6 +70,84 @@ pub fn upsert_node(conn: &Connection, node: &Node) -> anyhow::Result<()> {
     .context("upsert_node execute")?;
 
     Ok(())
+}
+
+/// Insert or refresh a `node_seen` provenance row, stamping it with the current
+/// sync `run_id` (used by the epoch sweep to detect vanished devices).
+#[allow(clippy::too_many_arguments)]
+pub fn upsert_node_seen(
+    conn: &Connection,
+    account: &str,
+    device_id: &str,
+    node_id: &str,
+    machine_key: &str,
+    fuzzy_hint: Option<&str>,
+    last_seen: &str,
+    run_id: i64,
+) -> anyhow::Result<()> {
+    conn.execute(
+        "INSERT INTO node_seen
+            (account, device_id, node_id, machine_key, fuzzy_hint, last_seen, last_confirmed_run)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(account, device_id) DO UPDATE SET
+            node_id            = excluded.node_id,
+            machine_key        = excluded.machine_key,
+            fuzzy_hint         = excluded.fuzzy_hint,
+            last_seen          = excluded.last_seen,
+            last_confirmed_run = excluded.last_confirmed_run",
+        params![
+            account,
+            device_id,
+            node_id,
+            machine_key,
+            fuzzy_hint.unwrap_or(""),
+            last_seen,
+            run_id,
+        ],
+    )
+    .context("upsert_node_seen")?;
+    Ok(())
+}
+
+/// Epoch-scoped sweep: delete `node_seen` rows for `account` whose
+/// `last_confirmed_run` is not the current `run_id` — i.e. devices that were
+/// present in a prior run but absent from this (successful) one. Scoped to the
+/// account so a failed/skipped account never wipes its provenance (additive).
+pub fn sweep_epoch(conn: &Connection, account: &str, run_id: i64) -> anyhow::Result<()> {
+    conn.execute(
+        "DELETE FROM node_seen WHERE account = ?1 AND last_confirmed_run != ?2",
+        params![account, run_id],
+    )
+    .context("sweep_epoch")?;
+    Ok(())
+}
+
+/// Mark every node whose provenance has fully vanished (no `node_seen` rows
+/// remain) as `stale = 1`, and clear the flag on nodes that still have
+/// provenance. Stale nodes are kept (history/enrollment preserved), not deleted.
+pub fn mark_stale_nodes(conn: &Connection) -> anyhow::Result<()> {
+    conn.execute(
+        "UPDATE node SET stale = CASE
+            WHEN (SELECT COUNT(*) FROM node_seen WHERE node_seen.node_id = node.fleet_id) = 0
+            THEN 1 ELSE 0 END",
+        [],
+    )
+    .context("mark_stale_nodes")?;
+    Ok(())
+}
+
+/// Read the `stale` flag for a node (test/inspection helper).
+pub fn is_stale(conn: &Connection, fleet_id: &str) -> anyhow::Result<Option<bool>> {
+    let r = conn.query_row(
+        "SELECT stale FROM node WHERE fleet_id = ?1",
+        params![fleet_id],
+        |row| row.get::<_, i64>(0),
+    );
+    match r {
+        Ok(v) => Ok(Some(v != 0)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e).context("is_stale"),
+    }
 }
 
 pub fn get(conn: &Connection, fleet_id: &str) -> anyhow::Result<Option<Node>> {
@@ -166,6 +245,7 @@ fn row_to_node(row: &rusqlite::Row<'_>) -> rusqlite::Result<Node> {
         notes,
         first_seen: parse_dt(&first_seen_str)?,
         updated_at: parse_dt(&updated_at_str)?,
+        fuzzy_hint: None,
     })
 }
 
@@ -199,6 +279,7 @@ mod tests {
             notes: Some("test node".to_owned()),
             first_seen: now,
             updated_at: now,
+            fuzzy_hint: None,
         }
     }
 
@@ -295,5 +376,62 @@ mod tests {
 
         let nodes = list(&conn).unwrap();
         assert_eq!(nodes.len(), 3);
+    }
+
+    #[test]
+    fn node_seen_upsert_and_epoch_sweep() {
+        let f = NamedTempFile::new().unwrap();
+        let conn = open(f.path()).unwrap();
+        upsert_node(&conn, &make_node("n1")).unwrap();
+
+        // Run 1: device present.
+        upsert_node_seen(
+            &conn,
+            "personal",
+            "devX",
+            "n1",
+            "mk:1",
+            Some("fz:x"),
+            "t1",
+            1,
+        )
+        .unwrap();
+        sweep_epoch(&conn, "personal", 1).unwrap();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM node_seen WHERE account='personal'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1, "device present after run 1");
+
+        // Run 2: personal succeeds but devX is absent (not re-upserted) → swept.
+        sweep_epoch(&conn, "personal", 2).unwrap();
+        let cnt2: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM node_seen WHERE account='personal'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt2, 0, "absent device swept in run 2");
+
+        mark_stale_nodes(&conn).unwrap();
+        assert_eq!(
+            is_stale(&conn, "n1").unwrap(),
+            Some(true),
+            "orphaned node stale"
+        );
+    }
+
+    #[test]
+    fn stale_cleared_when_still_seen() {
+        let f = NamedTempFile::new().unwrap();
+        let conn = open(f.path()).unwrap();
+        upsert_node(&conn, &make_node("n1")).unwrap();
+        upsert_node_seen(&conn, "personal", "devX", "n1", "mk:1", None, "t1", 1).unwrap();
+        mark_stale_nodes(&conn).unwrap();
+        assert_eq!(is_stale(&conn, "n1").unwrap(), Some(false));
     }
 }

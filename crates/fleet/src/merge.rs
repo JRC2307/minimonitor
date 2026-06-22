@@ -20,7 +20,7 @@
 //! fuzzy-hint map, but two genuinely different `worker` boxes stay as two Nodes,
 //! each flagged `DedupeKind::Fuzzy`.
 
-use crate::model::{DedupeKind, Node, Tags, TailnetRef, Tier, TsDevice, slugify};
+use crate::model::{DedupeKind, Node, TailnetRef, Tier, TsDevice, parse_tags, slugify};
 use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -254,15 +254,13 @@ pub fn merge(
             os: canonical.os.clone(),
             online: is_online(last_seen, threshold),
             last_seen,
-            tags: Tags {
-                raw: raw_tags,
-                ..Tags::default()
-            },
-            tier: Tier::Agentless, // §3.5 step 7 (Task 5) layers the real tier
+            tags: parse_tags(&raw_tags),
+            tier: Tier::Agentless, // §3.5 step 7 (overrides::apply) layers the real tier
             dedupe_key_kind: group.kind,
-            notes: fuzzy_hint, // carried as a re-link hint; Task 5 overwrites notes
+            notes: None,
             first_seen: last_seen,
             updated_at: now,
+            fuzzy_hint, // carried as a re-link hint into node_seen.fuzzy_hint
         });
     }
 
@@ -520,7 +518,7 @@ mod tests {
         assert_eq!(nodes1.len(), 1);
         let minted = nodes1[0].fleet_id.clone();
         assert!(minted.starts_with("n-"), "fuzzy id minted: {minted}");
-        let hint = nodes1[0].notes.clone().expect("fuzzy hint carried");
+        let hint = nodes1[0].fuzzy_hint.clone().expect("fuzzy hint carried");
 
         // Build the prior map from the first sync.
         let mut prior = PriorIds::default();
@@ -548,5 +546,127 @@ mod tests {
             nodes2[0].fleet_id, minted,
             "renamed fuzzy box re-links to same id"
         );
+    }
+
+    #[test]
+    fn fuzzy_hint_in_fuzzy_hint_field_not_notes() {
+        let d = dev("personal", "7", "buildbox", "", "linux", &fresh());
+        let nodes = merge(
+            vec![("personal".into(), vec![d])],
+            &Overrides::default(),
+            &PriorIds::default(),
+            DEFAULT_ONLINE_THRESHOLD,
+            false,
+        );
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            nodes[0].fuzzy_hint.is_some(),
+            "fuzzy hint lives in its own field"
+        );
+        assert!(nodes[0].notes.is_none(), "notes must not carry the hint");
+    }
+
+    #[test]
+    fn fuzzy_hint_survives_override_apply() {
+        use crate::overrides::FullOverrides;
+        let d = dev("personal", "7", "buildbox", "", "linux", &fresh());
+        let mut nodes = merge(
+            vec![("personal".into(), vec![d])],
+            &Overrides::default(),
+            &PriorIds::default(),
+            DEFAULT_ONLINE_THRESHOLD,
+            false,
+        );
+        let mut node = nodes.remove(0);
+        let hint_before = node.fuzzy_hint.clone();
+        assert!(hint_before.is_some());
+
+        // Apply an override that sets a notes string for this fleet_id.
+        let mut ov = FullOverrides::default();
+        ov.nodes.insert(
+            node.fleet_id.clone(),
+            crate::overrides::NodeOverride {
+                notes: Some("operator note".to_owned()),
+                ..Default::default()
+            },
+        );
+        crate::overrides::apply(&mut node, &ov);
+
+        assert_eq!(node.notes.as_deref(), Some("operator note"));
+        assert_eq!(
+            node.fuzzy_hint, hint_before,
+            "override apply must not clobber fuzzy_hint"
+        );
+    }
+
+    #[test]
+    fn colliding_box_relink() {
+        // Sync 1: two boxes share hostname+os, no machinekey, no alias → fuzzy
+        // collision → disambiguated keys → two distinct fleet_ids.
+        let a1 = dev(
+            "client-a",
+            "1",
+            "worker",
+            "",
+            "linux",
+            "2026-06-20T10:00:00Z",
+        );
+        let b1 = dev(
+            "client-b",
+            "2",
+            "worker",
+            "",
+            "linux",
+            "2026-06-20T11:00:00Z",
+        );
+        let nodes1 = merge(
+            vec![("client-a".into(), vec![a1]), ("client-b".into(), vec![b1])],
+            &Overrides::default(),
+            &PriorIds::default(),
+            DEFAULT_ONLINE_THRESHOLD,
+            false,
+        );
+        assert_eq!(nodes1.len(), 2);
+        assert_ne!(nodes1[0].fleet_id, nodes1[1].fleet_id);
+
+        // Build the prior map from sync 1's fuzzy hints.
+        let mut prior = PriorIds::default();
+        for n in &nodes1 {
+            let hint = n.fuzzy_hint.clone().expect("colliding box has a hint");
+            prior.by_fuzzy_hint.insert(hint, n.fleet_id.clone());
+        }
+
+        // Sync 2: same two boxes reappear (same hostname+os, same accounts +
+        // device ids so the disambiguated key matches). They must re-link to the
+        // same fleet_ids minted in sync 1.
+        let a2 = dev(
+            "client-a",
+            "1",
+            "worker",
+            "",
+            "linux",
+            "2026-06-21T10:00:00Z",
+        );
+        let b2 = dev(
+            "client-b",
+            "2",
+            "worker",
+            "",
+            "linux",
+            "2026-06-21T11:00:00Z",
+        );
+        let nodes2 = merge(
+            vec![("client-a".into(), vec![a2]), ("client-b".into(), vec![b2])],
+            &Overrides::default(),
+            &prior,
+            DEFAULT_ONLINE_THRESHOLD,
+            false,
+        );
+        assert_eq!(nodes2.len(), 2);
+        let ids1: std::collections::BTreeSet<_> =
+            nodes1.iter().map(|n| n.fleet_id.clone()).collect();
+        let ids2: std::collections::BTreeSet<_> =
+            nodes2.iter().map(|n| n.fleet_id.clone()).collect();
+        assert_eq!(ids1, ids2, "both boxes re-link to their sync-1 fleet_ids");
     }
 }

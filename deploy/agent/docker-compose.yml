@@ -1,0 +1,22 @@
+# Per-owned-box Beszel agent — push-through-NAT model.
+#
+# Deploy this on EACH owned box (NOT on the Intel mini hub).
+# The agent connects OUTBOUND to the hub via WebSocket — no inbound port needed.
+# Image is pinned to match the hub version (henrygd/beszel:0.9.1).
+#
+# Required env vars (set in .env or shell before running):
+#   INTEL_MINI_HOST          — tailnet IP or hostname of the Intel mini hub
+#   BESZEL_BOOTSTRAP_TOKEN   — one-time universal token (enable in Beszel hub UI,
+#                              copy token, disable when all agents are enrolled)
+
+services:
+  beszel-agent:
+    image: henrygd/beszel-agent:0.9.1
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      LISTEN: 45876
+      HUB_URL: http://${INTEL_MINI_HOST}:8090
+      TOKEN: ${BESZEL_BOOTSTRAP_TOKEN}

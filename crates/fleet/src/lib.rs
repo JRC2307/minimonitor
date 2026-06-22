@@ -6,6 +6,7 @@ pub mod config;
 pub mod db;
 pub mod doctor;
 pub mod export;
+pub mod kuma;
 pub mod merge;
 pub mod model;
 pub mod overrides;

@@ -133,6 +133,142 @@ mod ts_rfc3339 {
     }
 }
 
+// ─── Kuma monitor types (spec §3.7) ──────────────────────────────────────────
+
+/// The kind of Uptime-Kuma monitor. Wire values are `ping`/`http`/`port`
+/// (Kuma 1.23.x). `port` is Kuma's TCP-port-open check.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum MonitorType {
+    Ping,
+    Http,
+    Port,
+}
+
+/// The **full, version-pinned** Uptime-Kuma monitor object we send on
+/// `add`/`editMonitor` (Kuma 1.23.16, socket.io v4).
+///
+/// Field **declaration order is load-bearing**: serde emits fields in this
+/// order, and the contract test byte-matches the recorded 1.23.16 payload
+/// fixtures (`tests/fixtures/kuma/monitor_spec_*.json`). A field rename or
+/// reorder fails that test, not production (R-testability).
+///
+/// `url` (http), `hostname` (ping/port) and `port` (port) are mutually-applicable
+/// per type and skipped when `None` so each type's serialization byte-matches its
+/// fixture. The remaining fields are the minimal set Kuma's `add` handler requires
+/// (`accepted_statuscodes` is `.every()`-checked; `kafkaProducer*` are
+/// `JSON.stringify`-d server-side, so they MUST be present).
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct MonitorSpec {
+    #[serde(rename = "type")]
+    pub monitor_type: MonitorType,
+    /// Idempotency key — set to the node's `fleet_id`.
+    pub name: String,
+    /// HTTP target (http monitors only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Host/IP target (ping + port monitors).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+    /// TCP port (port monitors only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    pub interval: u32,
+    pub maxretries: u32,
+    #[serde(rename = "retryInterval")]
+    pub retry_interval: u32,
+    #[serde(rename = "resendInterval")]
+    pub resend_interval: u32,
+    #[serde(rename = "upsideDown")]
+    pub upside_down: bool,
+    pub accepted_statuscodes: Vec<String>,
+    #[serde(rename = "kafkaProducerBrokers")]
+    pub kafka_producer_brokers: Vec<String>,
+    #[serde(rename = "kafkaProducerSaslOptions")]
+    pub kafka_producer_sasl_options: serde_json::Map<String, serde_json::Value>,
+    #[serde(rename = "notificationIDList")]
+    pub notification_id_list: std::collections::BTreeMap<String, bool>,
+}
+
+impl MonitorSpec {
+    /// Build a `ping` monitor (raw liveness) for `name` targeting `host`,
+    /// wiring the configured ntfy notification id (`0` → none).
+    pub fn ping(name: &str, host: &str, ntfy_id: i64) -> Self {
+        Self::base(MonitorType::Ping, name, ntfy_id).with_hostname(host)
+    }
+
+    /// Build an `http` monitor for `name` targeting `url`.
+    pub fn http(name: &str, url: &str, ntfy_id: i64) -> Self {
+        Self::base(MonitorType::Http, name, ntfy_id).with_url(url)
+    }
+
+    /// Build a `port` (TCP-open) monitor for `name` targeting `host:port`.
+    pub fn port(name: &str, host: &str, port: u16, ntfy_id: i64) -> Self {
+        let mut s = Self::base(MonitorType::Port, name, ntfy_id).with_hostname(host);
+        s.port = Some(port);
+        s
+    }
+
+    fn base(monitor_type: MonitorType, name: &str, ntfy_id: i64) -> Self {
+        let mut notification_id_list = std::collections::BTreeMap::new();
+        if ntfy_id > 0 {
+            notification_id_list.insert(ntfy_id.to_string(), true);
+        }
+        Self {
+            monitor_type,
+            name: name.to_owned(),
+            url: None,
+            hostname: None,
+            port: None,
+            interval: 60,
+            maxretries: 1,
+            retry_interval: 60,
+            resend_interval: 0,
+            upside_down: false,
+            accepted_statuscodes: vec!["200-299".to_owned()],
+            kafka_producer_brokers: Vec::new(),
+            kafka_producer_sasl_options: serde_json::Map::new(),
+            notification_id_list,
+        }
+    }
+
+    fn with_hostname(mut self, host: &str) -> Self {
+        self.hostname = Some(host.to_owned());
+        self
+    }
+
+    fn with_url(mut self, url: &str) -> Self {
+        self.url = Some(url.to_owned());
+        self
+    }
+}
+
+/// A monitor as it exists on the Kuma server, parsed from the pushed
+/// `monitorList` broadcast (an object keyed by stringified monitor id).
+///
+/// Only the fields reconcile needs are captured; the rest of the (large) Kuma
+/// monitor object is ignored. `name` is the idempotency key (= `fleet_id`);
+/// `id` is the `monitorID` stored back into `enrollment`.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct RemoteMonitor {
+    pub id: i64,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub monitor_type: MonitorType,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub hostname: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub interval: u32,
+    #[serde(default)]
+    pub maxretries: u32,
+    #[serde(default, rename = "notificationIDList")]
+    pub notification_id_list: std::collections::BTreeMap<String, bool>,
+}
+
 // FleetId newtype
 use regex::Regex;
 use std::sync::OnceLock;

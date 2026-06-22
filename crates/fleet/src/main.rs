@@ -172,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
                 .as_ref()
                 .map(|b| b.url.clone())
                 .unwrap_or_default();
-            fleet::commands::enroll::run(&cfg, &db_path, &beszel_url, dry_run).await?;
+            fleet::commands::enroll::run_all(&cfg, &db_path, &beszel_url, dry_run).await?;
         }
         Some(Commands::Ssh {
             target,

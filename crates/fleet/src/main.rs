@@ -55,6 +55,12 @@ enum Commands {
     /// URL: {base}/{ping_key}/{slug}?create=1  (auto-provisions the check).
     /// Run every minute from a LaunchAgent / cron slot.
     Heartbeat,
+    /// Idempotent reconcile of agent-tier nodes into Beszel (PocketBase REST).
+    Enroll {
+        /// Print the plan without making any API calls or DB writes.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Open an SSH session to a node via its validated Tailscale IP.
     Ssh {
         /// Node reference: fleet_id, hostname, or fqdn.
@@ -156,6 +162,17 @@ async fn main() -> anyhow::Result<()> {
             if matches!(result, fleet::commands::show::ShowResult::Ambiguous) {
                 std::process::exit(1);
             }
+        }
+        Some(Commands::Enroll { dry_run }) => {
+            let config_path = cli.config.clone().unwrap_or_else(default_config_path);
+            let cfg = fleet::config::load_config(&config_path)?;
+            let db_path = std::path::PathBuf::from(&cfg.db_path);
+            let beszel_url = cfg
+                .beszel
+                .as_ref()
+                .map(|b| b.url.clone())
+                .unwrap_or_default();
+            fleet::commands::enroll::run(&cfg, &db_path, &beszel_url, dry_run).await?;
         }
         Some(Commands::Ssh {
             target,

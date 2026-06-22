@@ -6,15 +6,12 @@ use tao::{
     platform::macos::{ActivationPolicy, EventLoopExtMacOS},
     window::WindowId,
 };
-use tray_icon::{
-    MouseButton, MouseButtonState, TrayIcon, TrayIconEvent,
-    menu::MenuEvent,
-};
+use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconEvent, menu::MenuEvent};
 
 use crate::inspector::{self, FilterState, InspectorCommand, InspectorWindow};
-use minimonitor_core::snapshot::{MonitorSnapshot, Sampler, SortMode};
 use crate::tray;
 use crate::util::percentage;
+use minimonitor_core::snapshot::{MonitorSnapshot, Sampler, SortMode};
 
 const REFRESH: Duration = Duration::from_secs(1);
 
@@ -112,10 +109,7 @@ impl AppState {
 
     fn status_title(&self) -> String {
         let ram_percent = percentage(self.live.used_memory_bytes, self.live.total_memory_bytes);
-        let mut title = format!(
-            "{:.0}%C {:.0}%R",
-            self.live.total_cpu_percent, ram_percent
-        );
+        let mut title = format!("{:.0}%C {:.0}%R", self.live.total_cpu_percent, ram_percent);
         if let Some(gpu) = self.live.gpu_percent {
             title.push_str(&format!(" {gpu:.0}%G"));
         }
@@ -188,7 +182,13 @@ impl AppState {
             "action:caffeinate" => {
                 let on = self.caffeinate.set(!self.caffeinate.is_on());
                 self.status_message = Some(
-                    if on { "Keep-awake ON (caffeinate)" } else { "Keep-awake OFF" }.to_owned());
+                    if on {
+                        "Keep-awake ON (caffeinate)"
+                    } else {
+                        "Keep-awake OFF"
+                    }
+                    .to_owned(),
+                );
             }
             "action:flush-dns" => {
                 self.status_message = Some(match crate::actions::flush_dns() {
@@ -240,7 +240,13 @@ impl AppState {
             InspectorCommand::ActionCaffeinate => {
                 let on = self.caffeinate.set(!self.caffeinate.is_on());
                 self.status_message = Some(
-                    if on { "Keep-awake ON (caffeinate)" } else { "Keep-awake OFF" }.to_owned());
+                    if on {
+                        "Keep-awake ON (caffeinate)"
+                    } else {
+                        "Keep-awake OFF"
+                    }
+                    .to_owned(),
+                );
             }
             InspectorCommand::ActionFlushDns => {
                 self.status_message = Some(match crate::actions::flush_dns() {
@@ -285,11 +291,7 @@ impl AppState {
             return;
         };
         let snapshot = self.presentation.as_ref().unwrap_or(&self.live);
-        let view = inspector::build_view(
-            snapshot,
-            &self.filters,
-            self.status_message.clone(),
-        );
+        let view = inspector::build_view(snapshot, &self.filters, self.status_message.clone());
         inspector::push_state(inspector, &view);
     }
 

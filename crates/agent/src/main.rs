@@ -21,11 +21,13 @@ fn main() {
 
     {
         let latest = latest.clone();
-        thread::spawn(move || loop {
-            thread::sleep(Duration::from_secs(1));
-            let snap = sampler.sample(SortMode::Cpu);
-            if let Ok(json) = serde_json::to_string(&snap) {
-                *latest.lock().unwrap() = json;
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(1));
+                let snap = sampler.sample(SortMode::Cpu);
+                if let Ok(json) = serde_json::to_string(&snap) {
+                    *latest.lock().unwrap() = json;
+                }
             }
         });
     }
@@ -39,8 +41,8 @@ fn main() {
             "/healthz" => ("ok".to_owned(), "text/plain"),
             _ => (latest.lock().unwrap().clone(), "application/json"),
         };
-        let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
-            .unwrap();
+        let header =
+            tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
         let _ = request.respond(tiny_http::Response::from_string(body).with_header(header));
     }
 }

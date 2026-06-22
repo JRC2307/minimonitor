@@ -132,9 +132,7 @@ impl Sampler {
             last_localhost: Instant::now(),
             ports: crate::net::listening_ports(),
             connections: crate::net::established_connections(),
-            identity: crate::net::network_identity(
-                System::host_name().unwrap_or_default(),
-            ),
+            identity: crate::net::network_identity(System::host_name().unwrap_or_default()),
             disks: Disks::new_with_refreshed_list(),
             cpu_ewma: std::collections::HashMap::new(),
         }
@@ -153,9 +151,7 @@ impl Sampler {
             self.users.refresh();
             self.ports = crate::net::listening_ports();
             self.connections = crate::net::established_connections();
-            self.identity = crate::net::network_identity(
-                System::host_name().unwrap_or_default(),
-            );
+            self.identity = crate::net::network_identity(System::host_name().unwrap_or_default());
             self.disks.refresh(true);
             self.last_localhost = now;
         }
@@ -244,8 +240,7 @@ impl Sampler {
             })
             .collect();
 
-        let alive: std::collections::HashSet<u32> =
-            processes.iter().map(|p| p.pid).collect();
+        let alive: std::collections::HashSet<u32> = processes.iter().map(|p| p.pid).collect();
         self.cpu_ewma.retain(|pid, _| alive.contains(pid));
         for p in &processes {
             self.cpu_ewma.insert(p.pid, p.sustained_cpu);

@@ -48,6 +48,8 @@ enum Commands {
     },
     /// Pull Cloudflare zones + cert-packs, upsert to cf_zone, ntfy on breach.
     CfSync,
+    /// Run the MTR path prober against configured targets; ntfy on breach.
+    Probe,
     /// Open an SSH session to a node via its validated Tailscale IP.
     Ssh {
         /// Node reference: fleet_id, hostname, or fqdn.
@@ -89,6 +91,13 @@ async fn main() -> anyhow::Result<()> {
             })?;
             fleet::commands::cf_sync::run(cf_cfg, cfg.ntfy.as_ref(), &db_path).await?;
             eprintln!("fleet cf-sync: done");
+        }
+        Some(Commands::Probe) => {
+            let config_path = cli.config.clone().unwrap_or_else(default_config_path);
+            let cfg = fleet::config::load_config(&config_path)?;
+            let db_path = std::path::PathBuf::from(&cfg.db_path);
+            fleet::commands::probe::run(&cfg, &db_path).await?;
+            eprintln!("fleet probe: done");
         }
         Some(Commands::Sync { overrides }) => {
             let config_path = cli.config.clone().unwrap_or_else(default_config_path);

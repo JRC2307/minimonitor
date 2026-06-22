@@ -1,5 +1,6 @@
 pub mod cf;
 pub mod nodes;
+pub mod probe;
 
 use anyhow::Context;
 use rusqlite::Connection;

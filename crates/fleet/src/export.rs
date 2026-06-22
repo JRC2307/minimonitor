@@ -1,13 +1,21 @@
-//! Git-tracked YAML snapshot export (spec §3.6).
+//! Export builders and git-tracked YAML snapshot (spec §3.6, §3.7, §3.8).
 //!
+//! ## YAML snapshot
 //! The snapshot must be **stable across syncs that change only volatile fields**
 //! so the git diff is meaningful. We therefore serialize a [`FleetYamlNode`]
 //! projection that **excludes** `last_seen`, `online`, and `updated_at`. Nodes
 //! are sorted by `fleet_id` for a deterministic byte output.
+//!
+//! ## JSON builders
+//! [`build_fleet_json`] / [`build_fleet_json_at`], [`build_cf_json`], and
+//! [`build_path_health_json`] are the single source of truth for the JSON shapes
+//! consumed by both the CLI `--json` output and `fleet serve`'s `/api/*` endpoints
+//! (Task 16). These structs are **public** so `serve` reuses them directly.
 
 use crate::model::{DedupeKind, Node, Tier};
 use anyhow::Context;
-use serde::Serialize;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 /// The stable, exported projection of a [`Node`]. Volatile fields
@@ -103,6 +111,89 @@ pub fn write_fleet_yaml(nodes: &[Node], path: &Path) -> anyhow::Result<()> {
     }
     std::fs::write(path, yaml).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
+}
+
+// ── JSON export builders (spec §3.7 / §3.8) ─────────────────────────────────
+
+/// Top-level fleet JSON export (`/api/fleet`). Public so `fleet serve` reuses it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FleetExport {
+    pub generated_at: String,
+    pub nodes: Vec<NodeExport>,
+}
+
+/// Per-node JSON projection. `online` is `u8` (1 = online, 0 = offline) so
+/// the dashboard can render status without a string comparison.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeExport {
+    pub id: String,
+    pub hostname: String,
+    pub tier: String,
+    /// 1 = online, 0 = offline (derived from `Node::online`).
+    pub online: u8,
+    pub site: Option<String>,
+    pub role: Option<String>,
+    pub owner: Option<String>,
+    pub last_seen: String,
+}
+
+/// Cloudflare zone export (`/api/cf`). Zones are `serde_json::Value` stubs until
+/// `fleet cf-sync` lands. Struct is public and reused by `fleet serve`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CfExport {
+    pub zones: Vec<serde_json::Value>,
+}
+
+/// MTR path-health export (`/api/path-health`). Hops are `serde_json::Value`
+/// stubs until `fleet probe` lands. Public, reused by `fleet serve`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathHealthExport {
+    pub hops: Vec<serde_json::Value>,
+}
+
+/// Build the fleet JSON export, stamping `generated_at` with [`Utc::now()`].
+pub fn build_fleet_json(nodes: &[Node]) -> FleetExport {
+    build_fleet_json_at(nodes, Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string())
+}
+
+/// Build the fleet JSON export with a **caller-supplied** `generated_at` string.
+///
+/// Use this variant in tests to produce deterministic output.
+pub fn build_fleet_json_at(nodes: &[Node], generated_at: String) -> FleetExport {
+    let exports = nodes
+        .iter()
+        .map(|n| NodeExport {
+            id: n.fleet_id.clone(),
+            hostname: n.hostname.clone(),
+            tier: match n.tier {
+                Tier::Agent => "agent".to_owned(),
+                Tier::Agentless => "agentless".to_owned(),
+            },
+            online: u8::from(n.online),
+            site: n.tags.site.clone(),
+            role: n.tags.role.clone(),
+            owner: n.tags.owner.clone(),
+            last_seen: n.last_seen.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        })
+        .collect();
+    FleetExport {
+        generated_at,
+        nodes: exports,
+    }
+}
+
+/// Build an empty-but-valid Cloudflare export. Populated by `fleet cf-sync` (Task 9).
+pub fn build_cf_json(zones: &[serde_json::Value]) -> CfExport {
+    CfExport {
+        zones: zones.to_vec(),
+    }
+}
+
+/// Build an empty-but-valid path-health export. Populated by `fleet probe` (Task 10).
+pub fn build_path_health_json(hops: &[serde_json::Value]) -> PathHealthExport {
+    PathHealthExport {
+        hops: hops.to_vec(),
+    }
 }
 
 #[cfg(test)]

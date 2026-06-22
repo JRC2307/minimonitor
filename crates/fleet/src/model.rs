@@ -49,6 +49,85 @@ pub enum DedupeKind {
     Fuzzy,
 }
 
+/// A device as returned by the Tailscale REST API
+/// (`GET /api/v2/tailnet/{tailnet}/devices?fields=default`).
+///
+/// Field names are camelCase on the wire (`#[serde(rename_all = "camelCase")]`).
+/// `account` is NOT part of the API payload — it is injected by the client after
+/// deserialization so the pure merge layer knows which tailnet each row came from.
+///
+/// `last_seen` is parsed from an RFC3339 string that carries a **non-UTC offset**
+/// (e.g. `-05:00`) and normalized to UTC via `parse_from_rfc3339().with_timezone(&Utc)`.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TsDevice {
+    /// Per-tailnet DeviceID (stable within one tailnet, NOT across accounts).
+    pub id: String,
+    /// MagicDNS hostname (short name).
+    #[serde(default)]
+    pub hostname: String,
+    /// Fully-qualified MagicDNS name.
+    #[serde(default)]
+    pub name: String,
+    /// Robust same-physical-box signal; stable across re-auth within a node state dir.
+    /// Empty for shared-in (external) devices.
+    #[serde(default)]
+    pub machine_key: String,
+    /// Ephemeral node key; changes on re-registration.
+    #[serde(default)]
+    pub node_key: String,
+    /// macOS|linux|windows|iOS|android
+    #[serde(default)]
+    pub os: String,
+    /// Tailnet IPs (100.x).
+    #[serde(default)]
+    pub addresses: Vec<String>,
+    /// ACL tags (flat strings).
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// True for shared-in devices that would pollute inventory; dropped in merge.
+    #[serde(default)]
+    pub is_external: bool,
+    /// False until an admin approves the device; dropped unless include_unauthorized.
+    #[serde(default = "default_authorized")]
+    pub authorized: bool,
+    /// RFC3339 timestamp with a possibly non-UTC offset; normalized to UTC on read.
+    #[serde(default = "epoch_utc", with = "ts_rfc3339")]
+    pub last_seen: DateTime<Utc>,
+    /// Injected by the client (the configured tailnet account name), NOT from the API.
+    #[serde(default)]
+    pub account: String,
+}
+
+fn default_authorized() -> bool {
+    true
+}
+
+fn epoch_utc() -> DateTime<Utc> {
+    DateTime::<Utc>::from_timestamp(0, 0).unwrap()
+}
+
+/// Serde adapter that parses an RFC3339 string with any offset and normalizes
+/// to UTC. Empty strings deserialize to the Unix epoch (offline).
+mod ts_rfc3339 {
+    use chrono::{DateTime, Utc};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(dt: &DateTime<Utc>, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&dt.to_rfc3339())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<Utc>, D::Error> {
+        let raw = String::deserialize(d)?;
+        if raw.is_empty() {
+            return Ok(super::epoch_utc());
+        }
+        DateTime::parse_from_rfc3339(&raw)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 // FleetId newtype
 use regex::Regex;
 use std::sync::OnceLock;

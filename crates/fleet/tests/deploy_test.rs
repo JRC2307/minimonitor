@@ -1,7 +1,8 @@
-//! Task-13 integration tests — Docker stack file validation.
+//! Task-13 / Task-14 integration tests — Docker stack file validation.
 //!
 //! Parse-only: no live containers, no networking.
-//! All tests read `deploy/docker-compose.yml` from the repo root.
+//! Task-13 tests read `deploy/docker-compose.yml` (hub compose, Intel mini).
+//! Task-14 tests read `deploy/agent/docker-compose.yml` (per-box agent compose).
 
 use fleet::doctor::check_compose_binds;
 use serde::Deserialize;
@@ -247,5 +248,109 @@ fn doctor_bind_check_passes_on_real_compose() {
         result.is_ok(),
         "doctor bind-check failed on deploy/docker-compose.yml: {:?}",
         result
+    );
+}
+
+// ─── Task-14: per-box agent compose assertions ────────────────────────────────
+
+fn agent_compose_path() -> PathBuf {
+    workspace_root()
+        .join("deploy")
+        .join("agent")
+        .join("docker-compose.yml")
+}
+
+fn agent_compose_text() -> String {
+    std::fs::read_to_string(agent_compose_path())
+        .expect("deploy/agent/docker-compose.yml must exist")
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentComposeFile {
+    #[serde(default)]
+    services: HashMap<String, AgentComposeService>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct AgentComposeService {
+    image: Option<String>,
+    network_mode: Option<String>,
+    #[serde(default)]
+    ports: Vec<serde_yaml_ng::Value>,
+    #[serde(default)]
+    volumes: Vec<serde_yaml_ng::Value>,
+    #[serde(default)]
+    environment: serde_yaml_ng::Value,
+}
+
+fn parse_agent_compose() -> AgentComposeFile {
+    let text = agent_compose_text();
+    serde_yaml_ng::from_str(&text).expect("deploy/agent/docker-compose.yml YAML must parse")
+}
+
+/// Task-14: The per-box Beszel agent compose must be push-model only.
+///
+/// Assertions:
+/// - `network_mode: host` (host metrics + outbound WS)
+/// - image pinned to `henrygd/beszel-agent:0.9.1` (matches hub)
+/// - `TOKEN: ${BESZEL_BOOTSTRAP_TOKEN}` in environment
+/// - NO published ports (outbound WS only — push-through-NAT)
+/// - docker.sock mounted read-only (`:ro`)
+#[test]
+fn agent_compose_is_push_model() {
+    let text = agent_compose_text();
+    let compose = parse_agent_compose();
+
+    let agent = compose
+        .services
+        .get("beszel-agent")
+        .expect("beszel-agent service must exist in deploy/agent/docker-compose.yml");
+
+    // network_mode: host
+    assert_eq!(
+        agent.network_mode.as_deref().unwrap_or(""),
+        "host",
+        "beszel-agent must use network_mode: host (for host metrics + outbound WS)"
+    );
+
+    // pinned image
+    assert_eq!(
+        agent.image.as_deref().unwrap_or(""),
+        "henrygd/beszel-agent:0.9.1",
+        "beszel-agent image must be pinned to henrygd/beszel-agent:0.9.1 (match the hub)"
+    );
+
+    // TOKEN env var must use the bootstrap token variable
+    let env_str = serde_yaml_ng::to_string(&agent.environment).unwrap_or_default();
+    assert!(
+        env_str.contains("BESZEL_BOOTSTRAP_TOKEN"),
+        "beszel-agent environment must reference BESZEL_BOOTSTRAP_TOKEN; env block: {env_str}"
+    );
+    assert!(
+        text.contains("${BESZEL_BOOTSTRAP_TOKEN}"),
+        "TOKEN must be templated as ${{BESZEL_BOOTSTRAP_TOKEN}} in deploy/agent/docker-compose.yml"
+    );
+
+    // NO published ports (outbound WS only — push-through-NAT)
+    assert!(
+        agent.ports.is_empty(),
+        "beszel-agent must NOT publish any port (outbound WS push model only); \
+         got ports: {:?}",
+        agent.ports
+    );
+
+    // docker.sock mounted read-only
+    let has_sock_ro = agent.volumes.iter().any(|v| {
+        let s = match v {
+            serde_yaml_ng::Value::String(s) => s.clone(),
+            other => serde_yaml_ng::to_string(other).unwrap_or_default(),
+        };
+        s.contains("docker.sock") && s.ends_with(":ro")
+    });
+    assert!(
+        has_sock_ro,
+        "beszel-agent must mount docker.sock read-only (/var/run/docker.sock:/var/run/docker.sock:ro); \
+         got volumes: {:?}",
+        agent.volumes
     );
 }

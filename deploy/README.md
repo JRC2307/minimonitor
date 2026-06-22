@@ -18,7 +18,7 @@ host's Tailscale `100.x` IP only (never `0.0.0.0`).
 | 6 | **`fleet export`** | LaunchAgent `com.caguabot.fleet.export` | Triggered by `WatchPaths` on `fleet.yaml` + fallback every **300 s** |
 | — | **`fleet heartbeat`** | LaunchAgent `com.caguabot.fleet.heartbeat` | Every **60 s** — external dead-man's-switch ping to hc-ping.com |
 
-> `fleet serve` LaunchAgent (`KeepAlive`, web UI on `:8099`) is installed in **Task 18** — not here.
+> `fleet serve` LaunchAgent (`KeepAlive`, web UI on `:8099`) is installed alongside the other agents in step 6 of `install.sh --fleet`.
 
 ### Boot order details
 
@@ -48,6 +48,83 @@ Keychain — its `FLEET_HC_PING_KEY` is resolved from env first (spec §6 / R-8)
 | ntfy | `${HOST_TS_IP}:8082` | Tailnet-only; phone must be on tailnet |
 | cloudflared | (outbound only) | No published port; tunnels `fleet serve` |
 | `fleet serve` | `${HOST_TS_IP}:8099` | Native LaunchAgent (Task 18), not a container |
+
+---
+
+## Cloudflare Access (Zero-Trust) setup
+
+`fleet serve` binds `${HOST_TS_IP}:8099` on the tailnet only.  For off-tailnet
+access (operator phone, etc.) a named `cloudflared` tunnel fronted by Cloudflare
+Access (Zero Trust) exposes `fleet.<domain>` without opening any public inbound port.
+
+### 1. Create the named tunnel
+
+```bash
+# On the Intel mini, authenticated to the Cloudflare account that owns <domain>
+cloudflared tunnel create fleet-serve
+# Copy the tunnel UUID from the output
+```
+
+In the Zero Trust dashboard (**Networks → Tunnels**) the tunnel will appear.  Go to
+its **Configure → Public Hostname** tab and add one hostname rule:
+
+| Field | Value |
+|-------|-------|
+| Subdomain | `fleet` |
+| Domain | `<domain>` (your CF-managed zone) |
+| Service type | HTTP |
+| URL | `http://${HOST_TS_IP}:8099` |
+
+> Replace `${HOST_TS_IP}` with the Intel mini's actual Tailscale `100.x` IP
+> (e.g. `http://100.71.2.3:8099`).  The tunnel connects **outbound** from the
+> mini to Cloudflare — no inbound port is opened.
+
+### 2. Attach a Cloudflare Access application (operator-only policy)
+
+1. **Zero Trust dashboard → Access → Applications → Add an application →
+   Self-hosted.**
+2. **Application domain:** `fleet.<domain>` (must match the tunnel hostname above).
+3. **Session duration:** 24h (adjust to taste).
+4. **Policy — operator only:**
+   - Policy name: `operator-only`
+   - Action: Allow
+   - Include rule: `Emails` → `<your-operator-email>` (or use a GitHub / Google
+     identity provider with your account's email).
+   - No other identities allowed — this is a single-operator gate.
+5. Save.  From this point any browser hitting `https://fleet.<domain>` must
+   authenticate through Cloudflare Access before reaching `fleet serve`.
+
+### 3. Add the tunnel token to deploy/.env
+
+After creating the tunnel, generate a token:
+
+```bash
+cloudflared tunnel token fleet-serve
+```
+
+Add the output to `deploy/.env` (never commit this file — it is git-ignored):
+
+```
+FLEET_CF_TUNNEL_TOKEN=<token-from-above>
+```
+
+The `cloudflared` compose service reads this variable and connects to Cloudflare
+automatically on `docker compose up`.
+
+### Security posture
+
+- **No public port.** The cloudflared tunnel is outbound-only.  `fleet serve`
+  binds `${HOST_TS_IP}:8099` (tailnet IP, never `0.0.0.0`).
+- **Two-layer gate:** tailnet ACLs protect the direct `:8099` path; Cloudflare
+  Access guards the `fleet.<domain>` path.  An attacker who bypasses Access still
+  needs to be on the tailnet.
+- **Zero Trust policy:** only the named operator identity (email/device posture)
+  can pass the Access gate — not "anyone with a Cloudflare account".
+
+### Rotation
+
+See the **Secrets → Rotation runbook** section below for `FLEET_CF_TUNNEL_TOKEN`
+rotation steps (`docker compose restart cloudflared` after updating `.env`).
 
 ---
 

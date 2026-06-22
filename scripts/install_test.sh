@@ -302,16 +302,82 @@ else
     fail "(d) export plist MISSING"
 fi
 
-# ── Test (e): NO fleet serve plist ──────────────────────────────────────────
+# ── Test (e): fleet serve plist IS present (Task 18) ────────────────────────
+#
+# Task 18 ships the `fleet serve` LaunchAgent.  After implementation this plist
+# MUST exist, have KeepAlive true (long-running daemon, NOT StartInterval), and
+# RunAtLoad true.
 
 echo ""
-echo "=== Test (e): NO com.caguabot.fleet.serve.plist (Task 18) ==="
+echo "=== Test (e): com.caguabot.fleet.serve.plist exists (Task 18) ==="
 
+# Re-use the last dryrun run from Test (d) — LAUNCHAGENTS is already set.
 SERVE_PLIST="$LAUNCHAGENTS/com.caguabot.fleet.serve.plist"
-if [[ ! -f "$SERVE_PLIST" ]]; then
-    pass "(e) com.caguabot.fleet.serve.plist correctly absent"
+
+if [[ -f "$SERVE_PLIST" ]]; then
+    pass "(e) com.caguabot.fleet.serve.plist exists"
 else
-    fail "(e) com.caguabot.fleet.serve.plist should NOT exist yet (it belongs to Task 18)"
+    fail "(e) com.caguabot.fleet.serve.plist is MISSING — Task 18 must emit it"
+fi
+
+# ── Test (f): serve_launchagent_present — shape assertions ─────────────────
+#
+# The serve plist must:
+#   - Contain KeepAlive true  (long-running daemon, NOT StartInterval)
+#   - Contain RunAtLoad true
+#   - NOT contain StartInterval (that is the interval-agent pattern; serve is a daemon)
+
+echo ""
+echo "=== Test (f): serve_launchagent_present — KeepAlive/RunAtLoad shape ==="
+
+# Fresh dryrun run (independent tmpdir) so assertions are deterministic.
+setup_stubs "100.71.2.3"
+run_fleet_install
+
+SERVE_PLIST2="$TMPDIR_ROOT/Library/LaunchAgents/com.caguabot.fleet.serve.plist"
+
+if [[ -f "$SERVE_PLIST2" ]]; then
+    pass "(f) com.caguabot.fleet.serve.plist emitted by install (fresh run)"
+else
+    fail "(f) com.caguabot.fleet.serve.plist not found after install"
+fi
+
+# KeepAlive true — must contain both the key and the value on adjacent lines
+if grep -q "<key>KeepAlive</key>" "$SERVE_PLIST2" 2>/dev/null; then
+    pass "(f) serve plist contains <key>KeepAlive</key>"
+else
+    fail "(f) serve plist missing <key>KeepAlive</key>"
+    [[ -f "$SERVE_PLIST2" ]] && cat "$SERVE_PLIST2" || true
+fi
+
+if grep -q "<true/>" "$SERVE_PLIST2" 2>/dev/null; then
+    pass "(f) serve plist contains <true/> (KeepAlive value)"
+else
+    fail "(f) serve plist missing <true/> for KeepAlive"
+fi
+
+# RunAtLoad true
+if grep -q "<key>RunAtLoad</key>" "$SERVE_PLIST2" 2>/dev/null; then
+    pass "(f) serve plist contains <key>RunAtLoad</key>"
+else
+    fail "(f) serve plist missing <key>RunAtLoad</key>"
+fi
+
+# Must NOT contain StartInterval (serve is a long-running daemon, not interval-scheduled)
+if grep -q "StartInterval" "$SERVE_PLIST2" 2>/dev/null; then
+    fail "(f) serve plist must NOT contain StartInterval (it is a KeepAlive daemon, not a cron agent)"
+    grep "StartInterval" "$SERVE_PLIST2" || true
+else
+    pass "(f) serve plist correctly has no StartInterval"
+fi
+
+# dryrun guard — in dryrun mode launchctl must NOT be called; output must print
+# [DRYRUN] would load ... serve.plist
+DRYRUN_OUT="$(setup_stubs "100.71.2.3" && run_fleet_install 2>&1)"
+if echo "$DRYRUN_OUT" | grep -q "\[DRYRUN\].*serve"; then
+    pass "(f) dryrun prints [DRYRUN] for serve plist instead of calling launchctl"
+else
+    fail "(f) dryrun output missing [DRYRUN] marker for serve plist"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

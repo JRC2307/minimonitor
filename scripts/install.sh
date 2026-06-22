@@ -309,7 +309,53 @@ PLIST
 PLIST
     printf 'Wrote plist: %s\n' "$EXPORT_PLIST"
 
-    # ── 7. Load all fleet LaunchAgents (skip in dryrun) ────────────────────
+    # ── 7. Install fleet serve LaunchAgent (KeepAlive, long-running daemon) ──
+    #
+    # `fleet serve` is the ONLY KeepAlive agent in the fleet stack.  All other
+    # agents are interval-scheduled (StartInterval).  serve is a persistent web
+    # daemon that must stay up — hence KeepAlive/RunAtLoad, no StartInterval.
+    # (Task 18 / spec §3.8)
+
+    SERVE_PLIST="$LAUNCHAGENTS_DIR/com.caguabot.fleet.serve.plist"
+    cat > "$SERVE_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.caguabot.fleet.serve</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${FLEET_BIN_PATH}</string>
+    <string>serve</string>
+  </array>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>WorkingDirectory</key>
+  <string>${ROOT_DIR}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/com.caguabot.fleet.serve.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/com.caguabot.fleet.serve.error.log</string>
+</dict>
+</plist>
+PLIST
+    printf 'Wrote plist: %s\n' "$SERVE_PLIST"
+
+    # ── 8. Load all fleet LaunchAgents (skip in dryrun) ────────────────────
 
     FLEET_PLISTS=(
         "com.caguabot.fleet.heartbeat.plist"
@@ -318,6 +364,7 @@ PLIST
         "com.caguabot.fleet.probe.plist"
         "com.caguabot.fleet.cf-sync.plist"
         "com.caguabot.fleet.export.plist"
+        "com.caguabot.fleet.serve.plist"
     )
 
     if [[ "${FLEET_INSTALL_DRYRUN:-0}" != "1" ]]; then

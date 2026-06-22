@@ -12,4 +12,5 @@ pub mod model;
 pub mod overrides;
 pub mod probe;
 pub mod secrets;
+pub mod serve;
 pub mod tailscale;

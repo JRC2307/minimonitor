@@ -75,6 +75,10 @@ enum Commands {
         #[arg(last = true)]
         cmd: Vec<String>,
     },
+    /// Start the read-only JSON API server (spec §3.8).
+    ///
+    /// Binds to the address in `[serve] bind` from fleet.toml.
+    Serve,
 }
 
 const TS_API_BASE: &str = "https://api.tailscale.com";
@@ -186,6 +190,12 @@ async fn main() -> anyhow::Result<()> {
             let conn = fleet::db::open(&db_path)?;
             let user = user.unwrap_or(cfg.ssh_user);
             fleet::commands::ssh::run(&conn, &target, &user, ts, &cmd)?;
+        }
+        Some(Commands::Serve) => {
+            let config_path = cli.config.clone().unwrap_or_else(default_config_path);
+            let cfg = fleet::config::load_config(&config_path)?;
+            let db_path = std::path::PathBuf::from(&cfg.db_path);
+            fleet::commands::serve::run(&cfg, &db_path).await?;
         }
     }
 

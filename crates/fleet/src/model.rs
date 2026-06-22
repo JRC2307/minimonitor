@@ -171,6 +171,18 @@ impl std::fmt::Display for FleetId {
     }
 }
 
+/// Derive online status from `last_seen` freshness.
+///
+/// Never trusts a stored `online` flag — recomputes at call time.
+/// Returns `false` if `last_seen` is in the future (clock skew / unparseable).
+pub fn is_online(last_seen: chrono::DateTime<Utc>, max_age: std::time::Duration) -> bool {
+    Utc::now()
+        .signed_duration_since(last_seen)
+        .to_std()
+        .map(|age| age < max_age)
+        .unwrap_or(false)
+}
+
 /// Slugify a hostname: lowercase, map chars outside [A-Za-z0-9._:-] to '-'.
 /// A leading '-' is neutralized by prepending 'n' so it can't be an ssh option.
 pub fn slugify(s: &str) -> String {

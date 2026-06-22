@@ -1,7 +1,167 @@
-use crate::model::{DedupeKind, Node, Tags, Tier};
+use crate::model::{DedupeKind, Node, Tags, TailnetRef, Tier};
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::{Connection, params};
+
+// ── Filter / query types ──────────────────────────────────────────────────────
+
+/// Filters for `list_filtered`. All fields default to "no filter" (None).
+#[derive(Default, Debug)]
+pub struct ListFilter {
+    /// Facet name (role|owner|site|gpu) + value pair from `--tag role:host`.
+    pub tag_facet: Option<String>,
+    pub tag_value: Option<String>,
+    /// Filter by tier (agent|agentless).
+    pub tier: Option<Tier>,
+}
+
+/// Result of `get_by_ref` — models the three resolution outcomes.
+///
+/// `Found` boxes `Node` to keep the enum size reasonable (Node is large).
+#[allow(clippy::large_enum_variant)]
+pub enum ResolveResult {
+    Found(Node),
+    Ambiguous(Vec<Node>),
+    NotFound,
+}
+
+impl std::fmt::Debug for ResolveResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResolveResult::Found(n) => write!(f, "Found({})", n.fleet_id),
+            ResolveResult::Ambiguous(v) => write!(f, "Ambiguous({} candidates)", v.len()),
+            ResolveResult::NotFound => write!(f, "NotFound"),
+        }
+    }
+}
+
+// ── Filtered list ──────────────────────────────────────────────────────────────
+
+/// List nodes with optional facet/tier filters.
+/// No filter → returns all nodes ordered by fleet_id.
+pub fn list_filtered(conn: &Connection, filter: &ListFilter) -> anyhow::Result<Vec<Node>> {
+    // Build query dynamically based on what filters are set.
+    // Using a WHERE 1=1 + optional AND clauses keeps things readable.
+    let mut conditions: Vec<String> = Vec::new();
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let mut param_idx = 1usize;
+
+    if let (Some(facet), Some(value)) = (&filter.tag_facet, &filter.tag_value) {
+        // Validate facet against known columns
+        let col = match facet.as_str() {
+            "role" | "owner" | "site" | "gpu" => facet.as_str(),
+            other => anyhow::bail!(
+                "unknown tag facet {:?} (expected role|owner|site|gpu)",
+                other
+            ),
+        };
+        conditions.push(format!("{col} = ?{param_idx}"));
+        params_vec.push(Box::new(value.clone()));
+        param_idx += 1;
+    }
+
+    if let Some(tier) = &filter.tier {
+        let tier_str = match tier {
+            Tier::Agent => "agent",
+            Tier::Agentless => "agentless",
+        };
+        conditions.push(format!("tier = ?{param_idx}"));
+        params_vec.push(Box::new(tier_str.to_owned()));
+        param_idx += 1;
+    }
+    let _ = param_idx; // suppress unused warning
+
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    let sql = format!(
+        "SELECT fleet_id, hostname, fqdn, os, addresses, online, last_seen,
+                tier, role, owner, site, gpu, raw_tags, dedupe_key_kind,
+                notes, first_seen, updated_at
+         FROM node {where_clause} ORDER BY fleet_id"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+
+    let refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+
+    let nodes: Result<Vec<Node>, _> = stmt.query_map(refs.as_slice(), row_to_node)?.collect();
+    nodes.context("list_filtered nodes")
+}
+
+// ── Single-node resolution ─────────────────────────────────────────────────────
+
+/// Resolve a node by fleet_id → hostname → fqdn (in that precedence order).
+///
+/// - fleet_id match: at most one row (primary key) → `Found`.
+/// - hostname match: one row → `Found`; >1 row → `Ambiguous`.
+/// - fqdn match: one row → `Found`; >1 row → `Ambiguous`.
+/// - Nothing: `NotFound`.
+pub fn get_by_ref(conn: &Connection, target: &str) -> anyhow::Result<ResolveResult> {
+    // 1. Try fleet_id (exact PK)
+    if let Some(node) = get(conn, target)? {
+        return Ok(ResolveResult::Found(node));
+    }
+
+    // 2. Try hostname
+    let mut stmt = conn.prepare(
+        "SELECT fleet_id, hostname, fqdn, os, addresses, online, last_seen,
+                tier, role, owner, site, gpu, raw_tags, dedupe_key_kind,
+                notes, first_seen, updated_at
+         FROM node WHERE hostname = ?1 ORDER BY fleet_id",
+    )?;
+    let by_hostname: Vec<Node> = stmt
+        .query_map(params![target], row_to_node)?
+        .collect::<Result<_, _>>()
+        .context("get_by_ref hostname")?;
+
+    match by_hostname.len() {
+        0 => {} // fall through to fqdn
+        1 => {
+            return Ok(ResolveResult::Found(
+                by_hostname.into_iter().next().unwrap(),
+            ));
+        }
+        _ => return Ok(ResolveResult::Ambiguous(by_hostname)),
+    }
+
+    // 3. Try fqdn
+    let mut stmt2 = conn.prepare(
+        "SELECT fleet_id, hostname, fqdn, os, addresses, online, last_seen,
+                tier, role, owner, site, gpu, raw_tags, dedupe_key_kind,
+                notes, first_seen, updated_at
+         FROM node WHERE fqdn = ?1 ORDER BY fleet_id",
+    )?;
+    let by_fqdn: Vec<Node> = stmt2
+        .query_map(params![target], row_to_node)?
+        .collect::<Result<_, _>>()
+        .context("get_by_ref fqdn")?;
+
+    match by_fqdn.len() {
+        0 => Ok(ResolveResult::NotFound),
+        1 => Ok(ResolveResult::Found(by_fqdn.into_iter().next().unwrap())),
+        _ => Ok(ResolveResult::Ambiguous(by_fqdn)),
+    }
+}
+
+/// Load the `seen_in` provenance list for a node from `node_seen`.
+pub fn load_seen_in(conn: &Connection, fleet_id: &str) -> anyhow::Result<Vec<TailnetRef>> {
+    let mut stmt = conn.prepare(
+        "SELECT account, device_id FROM node_seen WHERE node_id = ?1 ORDER BY account, device_id",
+    )?;
+    let refs: Result<Vec<TailnetRef>, _> = stmt
+        .query_map(params![fleet_id], |row| {
+            Ok(TailnetRef {
+                account: row.get(0)?,
+                device_id: row.get(1)?,
+            })
+        })?
+        .collect();
+    refs.context("load_seen_in")
+}
 
 pub fn upsert_node(conn: &Connection, node: &Node) -> anyhow::Result<()> {
     let addresses_json = serde_json::to_string(&node.addresses).context("serializing addresses")?;

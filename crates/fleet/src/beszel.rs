@@ -428,7 +428,7 @@ pub(crate) mod tests {
 
     fn auth_response() -> serde_json::Value {
         serde_json::json!({
-            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test",
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test", // # pragma: allowlist secret
             "record": {
                 "id": "usr001",
                 "email": "caguabot@example.com",
@@ -530,7 +530,7 @@ pub(crate) mod tests {
 
         // Assert list_systems sends the token RAW (no "Bearer " prefix).
         // The header value should be exactly the token string.
-        let raw_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test";
+        let raw_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test"; // # pragma: allowlist secret
         Mock::given(method("GET"))
             .and(path("/api/collections/systems/records"))
             // Must have Authorization header, and it must NOT start with "Bearer "

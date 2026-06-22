@@ -212,6 +212,141 @@ fn resolve_beszel_password(cfg: &BeszelConfig) -> anyhow::Result<String> {
     secrets::resolve(&cfg.password_env, &cfg.password_env)
 }
 
+// ─── Kuma half (agentless tier → Uptime-Kuma, spec §3.7) ─────────────────────
+
+use crate::config::KumaConfig;
+use crate::kuma::sio::SioKumaClient;
+use crate::kuma::{self, DELETE_GUARD_PCT, KumaClient, reconcile};
+use crate::model::{MonitorSpec, Node};
+
+/// Build the desired [`MonitorSpec`] for an agentless node (spec §3.7):
+///
+/// - a `notes` URL (`http(s)://…`) → an **http** monitor (app-level liveness),
+/// - otherwise the node's first tailnet `100.x` IP → a **ping** monitor (raw
+///   liveness). Nodes with neither are skipped (nothing to monitor).
+///
+/// `name` = `fleet_id` (the idempotency key). `ntfy_id` wires the configured
+/// ntfy notification (`0` → none).
+fn monitor_spec_for(node: &Node, ntfy_id: i64) -> Option<MonitorSpec> {
+    if let Some(url) = node
+        .notes
+        .as_deref()
+        .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+    {
+        return Some(MonitorSpec::http(&node.fleet_id, url, ntfy_id));
+    }
+    let ip = node.addresses.iter().find(|a| a.starts_with("100."))?;
+    Some(MonitorSpec::ping(&node.fleet_id, ip, ntfy_id))
+}
+
+/// Run the Kuma (agentless-tier) enroll pipeline.
+///
+/// Connects + logs in over socket.io, builds desired `MonitorSpec`s from the
+/// agentless nodes, runs the pure [`reconcile`] (40% delete-guard), and records
+/// each resolved `monitorID` in `enrollment(system='kuma')`. `--dry-run` prints
+/// the desired set and the server inventory without mutating anything.
+pub async fn run_kuma(
+    cfg: &Config,
+    db_path: &std::path::Path,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    let kuma_cfg = cfg
+        .kuma
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("fleet enroll: [kuma] section missing from config"))?;
+    let password = resolve_kuma_password(kuma_cfg)?;
+    run_kuma_with_password(cfg, db_path, dry_run, &password).await
+}
+
+/// Kuma enroll with an explicit password (testable core / injectable URL via cfg).
+pub async fn run_kuma_with_password(
+    cfg: &Config,
+    db_path: &std::path::Path,
+    dry_run: bool,
+    password: &str,
+) -> anyhow::Result<()> {
+    let kuma_cfg = cfg
+        .kuma
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("fleet enroll: [kuma] section missing from config"))?;
+
+    // ── Desired monitors from agentless nodes ─────────────────────────────────
+    let conn = db::open(db_path)?;
+    let all_nodes = db::nodes::list(&conn)?;
+    let want: Vec<MonitorSpec> = all_nodes
+        .iter()
+        .filter(|n| n.tier == Tier::Agentless)
+        .filter_map(|n| monitor_spec_for(n, kuma_cfg.ntfy_notification_id))
+        .collect();
+
+    // ── Connect + login (the push-based dance lives in sio.rs) ────────────────
+    let client = SioKumaClient::connect_and_login(&kuma_cfg.url, &kuma_cfg.user, password).await?;
+    let have = client.list().await?;
+
+    if dry_run {
+        println!("fleet enroll (kuma) --dry-run:");
+        println!("  desired agentless monitors: {}", want.len());
+        for w in &want {
+            println!("    {} ({:?})", w.name, w.monitor_type);
+        }
+        println!("  existing kuma monitors:     {}", have.len());
+        return Ok(());
+    }
+
+    // ── Reconcile (pure planner + execution behind the trait) ─────────────────
+    reconcile(&client, &want, DELETE_GUARD_PCT as u8).await?;
+
+    // ── Record resolved monitorIDs in enrollment ──────────────────────────────
+    // Re-read the server state so freshly-added monitors get their ids stored.
+    let after = client.list().await?;
+    let id_by_name: std::collections::HashMap<&str, i64> =
+        after.iter().map(|m| (m.name.as_str(), m.id)).collect();
+
+    let desired_names: std::collections::HashSet<&str> =
+        want.iter().map(|w| w.name.as_str()).collect();
+
+    for w in &want {
+        if let Some(id) = id_by_name.get(w.name.as_str()) {
+            kuma::upsert_enrollment(&conn, &w.name, &id.to_string())?;
+        }
+    }
+    // Drop enrollment rows for monitors no longer desired (and now deleted).
+    for row in kuma::list_enrollments(&conn)? {
+        if !desired_names.contains(row.fleet_id.as_str()) {
+            kuma::delete_enrollment(&conn, &row.fleet_id)?;
+        }
+    }
+
+    eprintln!("fleet enroll (kuma): reconciled {} monitor(s)", want.len());
+    Ok(())
+}
+
+/// Resolve the Kuma password from the configured env var / Keychain.
+fn resolve_kuma_password(cfg: &KumaConfig) -> anyhow::Result<String> {
+    secrets::resolve(&cfg.password_env, &cfg.password_env)
+}
+
+/// Compose both tiers: agent → Beszel, agentless → Kuma. Either section may be
+/// absent (then that tier is skipped). This is what `fleet enroll` runs.
+pub async fn run_all(
+    cfg: &Config,
+    db_path: &std::path::Path,
+    beszel_base_url: &str,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    if cfg.beszel.is_some() {
+        run(cfg, db_path, beszel_base_url, dry_run).await?;
+    } else {
+        eprintln!("fleet enroll: [beszel] absent — skipping agent tier");
+    }
+    if cfg.kuma.is_some() {
+        run_kuma(cfg, db_path, dry_run).await?;
+    } else {
+        eprintln!("fleet enroll: [kuma] absent — skipping agentless tier");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,6 +447,62 @@ mod tests {
         assert!(plan.missing_fleet_ids.is_empty());
         assert!(plan.to_delete.is_empty());
         assert!(!plan.guard_tripped);
+    }
+
+    // ── Kuma: agentless node → MonitorSpec mapping ────────────────────────────
+
+    fn agentless_node(fleet_id: &str, addr: &str, notes: Option<&str>) -> crate::model::Node {
+        let now = chrono::Utc::now();
+        crate::model::Node {
+            fleet_id: fleet_id.to_owned(),
+            hostname: fleet_id.to_owned(),
+            fqdn: format!("{fleet_id}.local"),
+            seen_in: vec![],
+            addresses: if addr.is_empty() {
+                vec![]
+            } else {
+                vec![addr.to_owned()]
+            },
+            os: "linux".to_owned(),
+            online: true,
+            last_seen: now,
+            tags: crate::model::Tags::default(),
+            tier: Tier::Agentless,
+            dedupe_key_kind: crate::model::DedupeKind::Fuzzy,
+            notes: notes.map(str::to_owned),
+            first_seen: now,
+            updated_at: now,
+            fuzzy_hint: None,
+        }
+    }
+
+    #[test]
+    fn agentless_ip_becomes_ping_monitor() {
+        let n = agentless_node("nas-01", "100.64.0.1", None);
+        let spec = super::monitor_spec_for(&n, 3).unwrap();
+        assert_eq!(spec.monitor_type, crate::model::MonitorType::Ping);
+        assert_eq!(spec.name, "nas-01");
+        assert_eq!(spec.hostname.as_deref(), Some("100.64.0.1"));
+        assert_eq!(spec.notification_id_list.get("3"), Some(&true));
+    }
+
+    #[test]
+    fn agentless_url_note_becomes_http_monitor() {
+        let n = agentless_node(
+            "svc-01",
+            "100.64.0.2",
+            Some("https://svc.example.com/health"),
+        );
+        let spec = super::monitor_spec_for(&n, 0).unwrap();
+        assert_eq!(spec.monitor_type, crate::model::MonitorType::Http);
+        assert_eq!(spec.url.as_deref(), Some("https://svc.example.com/health"));
+        assert!(spec.notification_id_list.is_empty(), "ntfy 0 → none");
+    }
+
+    #[test]
+    fn agentless_without_ip_or_url_is_skipped() {
+        let n = agentless_node("ghost", "", None);
+        assert!(super::monitor_spec_for(&n, 1).is_none());
     }
 
     #[test]

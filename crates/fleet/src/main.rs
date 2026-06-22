@@ -46,6 +46,8 @@ enum Commands {
         /// Node reference: fleet_id, hostname, or fqdn.
         node: String,
     },
+    /// Pull Cloudflare zones + cert-packs, upsert to cf_zone, ntfy on breach.
+    CfSync,
     /// Open an SSH session to a node via its validated Tailscale IP.
     Ssh {
         /// Node reference: fleet_id, hostname, or fqdn.
@@ -77,6 +79,16 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Doctor { compose }) => {
             run_doctor(&compose)?;
+        }
+        Some(Commands::CfSync) => {
+            let config_path = cli.config.clone().unwrap_or_else(default_config_path);
+            let cfg = fleet::config::load_config(&config_path)?;
+            let db_path = std::path::PathBuf::from(&cfg.db_path);
+            let cf_cfg = cfg.cloudflare.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("fleet cf-sync: [cloudflare] section missing from config")
+            })?;
+            fleet::commands::cf_sync::run(cf_cfg, cfg.ntfy.as_ref(), &db_path).await?;
+            eprintln!("fleet cf-sync: done");
         }
         Some(Commands::Sync { overrides }) => {
             let config_path = cli.config.clone().unwrap_or_else(default_config_path);

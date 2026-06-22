@@ -1,3 +1,5 @@
+pub mod alert;
+pub mod cloudflare;
 pub mod commands;
 pub mod config;
 pub mod db;

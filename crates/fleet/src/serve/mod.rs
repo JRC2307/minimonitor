@@ -284,6 +284,122 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn api_cf_seeded() {
+        use crate::cloudflare::CfZone;
+        use crate::db::cf::upsert_cf_zone;
+
+        let f = seed_db(&[]);
+        {
+            let conn = db::open(f.path()).unwrap();
+            upsert_cf_zone(
+                &conn,
+                &CfZone {
+                    id: "z-seed-1".to_owned(),
+                    name: "seeded-zone.io".to_owned(),
+                    status: "active".to_owned(),
+                    paused: false,
+                    healthy: true,
+                    min_cert_expiry: None,
+                },
+            )
+            .unwrap();
+        }
+
+        let router = build_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/api/cf").await;
+
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let zones = v["zones"].as_array().expect("zones is an array");
+        assert_eq!(zones.len(), 1, "expected one seeded zone, got {zones:?}");
+        assert_eq!(
+            zones[0]["name"].as_str(),
+            Some("seeded-zone.io"),
+            "zone name mismatch"
+        );
+        assert_eq!(
+            zones[0]["id"].as_str(),
+            Some("z-seed-1"),
+            "zone id mismatch"
+        );
+        assert_eq!(
+            zones[0]["status"].as_str(),
+            Some("active"),
+            "zone status mismatch"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_path_health_seeded() {
+        use crate::db::probe::{RunMeta, insert_run};
+        use crate::probe::{HopStat, PathType, Severity};
+
+        let f = seed_db(&[]);
+        {
+            let mut conn = db::open(f.path()).unwrap();
+            let hops = vec![HopStat {
+                ttl: 1,
+                host: Some("10.0.0.1".to_owned()),
+                sent: 5,
+                recv: 5,
+                loss_pct: 0.0,
+                last_ms: 3.0,
+                avg_ms: 3.0,
+                best_ms: 2.5,
+                worst_ms: 3.5,
+                stddev_ms: 0.2,
+                severity: Severity::Ok,
+            }];
+            insert_run(
+                &mut conn,
+                &RunMeta {
+                    target_name: "test-target",
+                    target_addr: "10.0.0.1",
+                    path_type: PathType::Underlay,
+                    cycles: 5,
+                    breached: false,
+                    ts: Utc::now(),
+                },
+                &hops,
+            )
+            .unwrap();
+        }
+
+        let router = build_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/api/path-health").await;
+
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let hops = v["hops"].as_array().expect("hops is an array");
+        assert_eq!(hops.len(), 1, "expected one seeded path, got {hops:?}");
+        assert_eq!(
+            hops[0]["target_name"].as_str(),
+            Some("test-target"),
+            "target_name mismatch"
+        );
+        assert_eq!(
+            hops[0]["target_addr"].as_str(),
+            Some("10.0.0.1"),
+            "target_addr mismatch"
+        );
+        assert_eq!(
+            hops[0]["dest_severity"].as_str(),
+            Some("ok"),
+            "dest_severity mismatch"
+        );
+    }
+
     // ── read-only: write through serve handle errors ───────────────────────────
 
     #[test]

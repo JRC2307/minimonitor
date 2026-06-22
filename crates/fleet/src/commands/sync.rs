@@ -147,6 +147,13 @@ fn build_prior_ids(conn: &rusqlite::Connection) -> anyhow::Result<PriorIds> {
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
     for row in rows {
         let (hint, node_id) = row?;
+        if let Some(existing) = prior.by_fuzzy_hint.get(&hint)
+            && existing != &node_id
+        {
+            eprintln!(
+                "sync: prior_ids collision: fuzzy_hint={hint:?} maps to both {existing} and {node_id} — keeping first"
+            );
+        }
         prior.by_fuzzy_hint.entry(hint).or_insert(node_id);
     }
     Ok(prior)

@@ -57,6 +57,7 @@ pub async fn run_with_base(
     let mut zones = cf.zones().await.context("cf-sync: fetching zones")?;
 
     // 4. Fetch cert-packs per zone and fold min_cert_expiry
+    let mut cert_check_failures: Vec<String> = Vec::new();
     for zone in &mut zones {
         match cf.cert_packs(&zone.id).await {
             Ok(min_expiry) => zone.min_cert_expiry = min_expiry,
@@ -65,6 +66,7 @@ pub async fn run_with_base(
                     "cf-sync: cert_packs({}) failed, skipping SSL check: {e}",
                     zone.name
                 );
+                cert_check_failures.push(zone.name.clone());
             }
         }
     }
@@ -78,6 +80,16 @@ pub async fn run_with_base(
 
     // 6. Evaluate thresholds and alert
     if let Some(ntfy) = ntfy_cfg {
+        // Alert on cert-check failures first (priority 4).
+        for zone_name in &cert_check_failures {
+            let msg =
+                format!("cf-sync: cert check FAILED for zone {zone_name} — SSL expiry unknown");
+            if let Err(e) =
+                alert::ntfy_with_base(ntfy, "Fleet: Cert Check Failed", &msg, 4, ntfy_base).await
+            {
+                eprintln!("cf-sync: ntfy cert-check-fail alert failed for {zone_name}: {e}");
+            }
+        }
         evaluate_and_alert(&zones, cf_cfg.ssl_warn_days, ntfy, ntfy_base).await;
     }
 
@@ -361,6 +373,57 @@ mod tests {
         }];
 
         evaluate_and_alert(&zones, 14, &ntfy, Some(&ntfy_server.uri())).await;
+        ntfy_server.verify().await;
+    }
+
+    // ── cert_packs failure → ntfy priority 4 alert ──────────────────────────
+
+    #[tokio::test]
+    async fn cert_packs_failure_triggers_ntfy_priority_4() {
+        let cf_server = MockServer::start().await;
+        mount_verify_ok(&cf_server).await;
+        mount_single_zone(&cf_server, "zFail", "fail-zone.com", true).await;
+
+        // cert_packs endpoint returns 500 → cert_packs() will error
+        Mock::given(method("GET"))
+            .and(path("/zones/zFail/ssl/certificate_packs"))
+            .and(query_param("status", "all"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&cf_server)
+            .await;
+
+        let ntfy_server = MockServer::start().await;
+        // Expect exactly one priority-4 ntfy call for the cert-check failure.
+        Mock::given(method("POST"))
+            .and(path("/fleet"))
+            .and(wiremock::matchers::body_partial_json(
+                serde_json::json!({"priority": 4}),
+            ))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&ntfy_server)
+            .await;
+
+        unsafe { std::env::set_var("FLEET_CF_CERTFAIL_TOKEN", "test-token") };
+        let cfg = cf_cfg("FLEET_CF_CERTFAIL_TOKEN");
+        unsafe { std::env::set_var("FLEET_CF_CERTFAIL_NTFY_TOKEN", "ntfy-tok") };
+        let ntfy = NtfyConfig {
+            base_url: ntfy_server.uri(),
+            topic: "fleet".to_owned(),
+            token_env: "FLEET_CF_CERTFAIL_NTFY_TOKEN".to_owned(),
+        };
+
+        let (_f, db_path) = open_temp_db();
+        run_with_base(
+            &cfg,
+            Some(&ntfy),
+            &db_path,
+            &cf_server.uri(),
+            Some(&ntfy_server.uri()),
+        )
+        .await
+        .unwrap();
+
         ntfy_server.verify().await;
     }
 

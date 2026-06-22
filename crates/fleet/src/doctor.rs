@@ -146,6 +146,57 @@ fn validate_port_bind(svc_name: &str, port_str: &str) -> Result<(), String> {
     }
 }
 
+// ─── `fleet serve` bind check (R-5, spec §3.8) ───────────────────────────────
+
+/// Validate the **native `fleet serve` bind** (`[serve] bind`, default
+/// `${HOST_TS_IP}:8099`). Same CGNAT-membership / no-wildcard rule as the
+/// compose-port check — the `serve` daemon must bind the host's `100.x` tailnet
+/// IP, never `0.0.0.0` or a bare port (implicit wildcard).
+///
+/// Accepted: `100.64.0.0/10:PORT` literals and `${VAR}:PORT` template forms
+/// (deferred to install-time resolution). Rejected: `0.0.0.0:PORT`,
+/// non-CGNAT literal IPs, and a host-less `PORT` (implicit wildcard).
+pub fn check_serve_bind(bind: &str) -> anyhow::Result<()> {
+    // Split off the trailing `:PORT`. IPv6 is out of scope for Phase 1 (v4-only),
+    // so the host portion is everything before the last colon.
+    let Some((host, port)) = bind.rsplit_once(':') else {
+        // No colon at all → a bare port (or host) → implicit wildcard bind.
+        anyhow::bail!(
+            "serve.bind `{bind}` has no explicit host IP (implicit wildcard) — \
+             bind the host tailnet IP, e.g. `${{HOST_TS_IP}}:8099`"
+        );
+    };
+
+    if host.is_empty() {
+        anyhow::bail!(
+            "serve.bind `{bind}` has an empty host (implicit wildcard) — \
+             bind the host tailnet IP, e.g. `${{HOST_TS_IP}}:8099`"
+        );
+    }
+    if port.is_empty() {
+        anyhow::bail!("serve.bind `{bind}` has no port");
+    }
+    if host == "0.0.0.0" {
+        anyhow::bail!(
+            "serve.bind `{bind}` binds to 0.0.0.0 (wildcard — must bind the tailnet CGNAT IP)"
+        );
+    }
+
+    match Ipv4Addr::from_str(host) {
+        Ok(ip) => {
+            if !is_cgnat(ip) {
+                anyhow::bail!(
+                    "serve.bind `{bind}` host IP `{ip}` is not in the CGNAT range 100.64.0.0/10"
+                );
+            }
+            Ok(())
+        }
+        // Template variable (e.g. `${HOST_TS_IP}`) — accept; install.sh validates
+        // the resolved value at runtime. Only literal IPs we can parse are rejected.
+        Err(_) => Ok(()),
+    }
+}
+
 // ─── Secret-resolvability check ──────────────────────────────────────────────
 
 /// Attempt to resolve each `(env_var, keychain_service)` pair using the provided
@@ -216,5 +267,44 @@ mod tests {
     fn template_variable_accepted() {
         // ${HOST_TS_IP} is not a parseable IP — treat as deferred template
         assert!(validate_port_bind("svc", "${HOST_TS_IP}:8090:8090").is_ok());
+    }
+
+    // ── serve bind check (R-5, spec §3.8) — extends the Task-2 doctor suite ───
+
+    #[test]
+    fn serve_bind_cgnat_ok() {
+        // Host's 100.x tailnet IP on :8099 → accepted.
+        assert!(check_serve_bind("100.64.0.1:8099").is_ok());
+        assert!(check_serve_bind("100.71.2.3:8099").is_ok());
+    }
+
+    #[test]
+    fn serve_bind_template_ok() {
+        // ${HOST_TS_IP}:8099 → deferred template, accepted (install.sh resolves it).
+        assert!(check_serve_bind("${HOST_TS_IP}:8099").is_ok());
+    }
+
+    #[test]
+    fn serve_bind_wildcard_rejected() {
+        assert!(check_serve_bind("0.0.0.0:8099").is_err());
+    }
+
+    #[test]
+    fn serve_bind_non_cgnat_rejected() {
+        assert!(check_serve_bind("192.168.1.10:8099").is_err());
+        assert!(check_serve_bind("203.0.113.10:8099").is_err());
+        // Just outside the CGNAT range.
+        assert!(check_serve_bind("100.128.0.0:8099").is_err());
+    }
+
+    #[test]
+    fn serve_bind_bare_port_rejected() {
+        // A host-less port is an implicit wildcard bind.
+        assert!(check_serve_bind("8099").is_err());
+    }
+
+    #[test]
+    fn serve_bind_empty_host_rejected() {
+        assert!(check_serve_bind(":8099").is_err());
     }
 }

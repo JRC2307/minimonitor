@@ -130,6 +130,73 @@ pub fn count_runs(conn: &Connection) -> anyhow::Result<i64> {
     Ok(conn.query_row("SELECT COUNT(*) FROM probe_run", [], |r| r.get(0))?)
 }
 
+/// The latest probe run per target, summarized to its **destination hop**
+/// (the last responding hop) — what `fleet serve`'s `/paths` view renders
+/// (spec §3.8 / §5). Targets without any responding hop fall back to the
+/// highest-ttl hop. Ordered by target name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatestPath {
+    pub target_name: String,
+    pub target_addr: String,
+    pub path_type: String,
+    pub dest_host: Option<String>,
+    pub dest_loss_pct: f64,
+    pub dest_avg_ms: f64,
+    pub dest_severity: String,
+}
+
+/// For each target, find its most recent `probe_run` and return the
+/// destination-hop summary (last responding hop, else highest ttl).
+pub fn latest_paths(conn: &Connection) -> anyhow::Result<Vec<LatestPath>> {
+    let mut stmt = conn.prepare(
+        "SELECT pr.id, pr.target_name, pr.target_addr, pr.path_type
+         FROM probe_run pr
+         JOIN (
+            SELECT target_name, MAX(ts) AS max_ts
+            FROM probe_run GROUP BY target_name
+         ) latest
+         ON pr.target_name = latest.target_name AND pr.ts = latest.max_ts
+         GROUP BY pr.target_name
+         ORDER BY pr.target_name",
+    )?;
+    let runs = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .context("latest_paths: runs")?;
+
+    let mut out = Vec::with_capacity(runs.len());
+    for (run_id, target_name, target_addr, path_type) in runs {
+        let hops = hops_for_run(conn, run_id)?;
+        // Destination = last RESPONDING hop; fallback = last hop overall.
+        let dest = hops
+            .iter()
+            .rev()
+            .find(|h| h.host.is_some())
+            .or_else(|| hops.last());
+        let (dest_host, dest_loss_pct, dest_avg_ms, dest_severity) = match dest {
+            Some(h) => (h.host.clone(), h.loss_pct, h.avg_ms, h.severity.clone()),
+            None => (None, 0.0, 0.0, "ok".to_owned()),
+        };
+        out.push(LatestPath {
+            target_name,
+            target_addr,
+            path_type,
+            dest_host,
+            dest_loss_pct,
+            dest_avg_ms,
+            dest_severity,
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

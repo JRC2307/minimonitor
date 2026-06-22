@@ -72,6 +72,45 @@ pub fn get_cf_zone(conn: &Connection, zone_id: &str) -> anyhow::Result<Option<Cf
     }
 }
 
+/// List all `cf_zone` rows, ordered by zone name (stable for rendering).
+pub fn list_cf_zones(conn: &Connection) -> anyhow::Result<Vec<CfZone>> {
+    let mut stmt = conn.prepare(
+        "SELECT zone_id, name, status, paused, healthy, min_cert_expiry
+         FROM cf_zone ORDER BY name",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            let min_cert_expiry_str: Option<String> = row.get(5)?;
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, bool>(3)?,
+                row.get::<_, bool>(4)?,
+                min_cert_expiry_str,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .context("list_cf_zones")?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, name, status, paused, healthy, min_cert_str)| {
+            let min_cert_expiry = min_cert_str
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            CfZone {
+                id,
+                name,
+                status,
+                paused,
+                healthy,
+                min_cert_expiry,
+            }
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

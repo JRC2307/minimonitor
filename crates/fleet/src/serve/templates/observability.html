@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}fleet · observability{% endblock %}
+{% block content %}
+<h1>observability</h1>
+
+<section class="rollup">
+  <h2>fleet online rollup</h2>
+  <p class="rollup-line">
+    <span class="up">●</span> {{ online_count }} online
+    / <span class="down">○</span> {{ offline_count }} offline
+    of {{ total_count }} nodes
+  </p>
+</section>
+
+<section class="deeplinks">
+  <h2>deep drill-down</h2>
+  <p class="meta">links out only — fleet never scrapes these (R-10)</p>
+  <ul>
+    <li><a class="deeplink beszel" href="{{ beszel_ui_url }}" rel="noopener" target="_blank">Beszel (agent metrics) &rarr;</a></li>
+    <li><a class="deeplink kuma" href="{{ kuma_ui_url }}" rel="noopener" target="_blank">Uptime-Kuma (agentless up/down) &rarr;</a></li>
+  </ul>
+</section>
+
+<section class="cf">
+  <h2>cloudflare zones</h2>
+  {% if zones.is_empty() %}
+  <p class="empty">No Cloudflare zones synced yet.</p>
+  {% else %}
+  <table class="zones">
+    <thead><tr><th>zone</th><th>status</th><th>health</th><th>cert expires</th></tr></thead>
+    <tbody>
+      {% for z in zones %}
+      <tr>
+        <td>{{ z.name }}</td>
+        <td>{{ z.status }}</td>
+        <td>{% if z.healthy %}<span class="up">healthy</span>{% else %}<span class="down">unhealthy</span>{% endif %}</td>
+        <td>{{ z.cert_expiry }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

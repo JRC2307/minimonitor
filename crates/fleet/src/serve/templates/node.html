@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}fleet · {{ hostname }}{% endblock %}
+{% block content %}
+<h1>{{ hostname }}</h1>
+<p class="meta"><a href="/">&larr; inventory</a></p>
+
+<dl class="detail">
+  <dt>fleet_id</dt><dd><code>{{ fleet_id }}</code></dd>
+  <dt>fqdn</dt><dd>{{ fqdn }}</dd>
+  <dt>os</dt><dd>{{ os }}</dd>
+  <dt>tier</dt><dd>{{ tier }}</dd>
+  <dt>online</dt><dd>{% if online %}<span class="up">● online</span>{% else %}<span class="down">○ offline</span>{% endif %}</dd>
+  <dt>dedupe key kind</dt><dd><span class="dedupe">{{ dedupe_key_kind }}</span></dd>
+  <dt>role</dt><dd>{{ role }}</dd>
+  <dt>owner</dt><dd>{{ owner }}</dd>
+  <dt>site</dt><dd>{{ site }}</dd>
+  <dt>gpu</dt><dd>{{ gpu }}</dd>
+  <dt>last seen</dt><dd>{{ last_seen }}</dd>
+</dl>
+
+<h2>addresses</h2>
+<ul class="addrs">
+  {% for a in addresses %}<li><code>{{ a }}</code></li>{% endfor %}
+</ul>
+
+<h2>seen in ({{ seen_in.len() }})</h2>
+<table class="seen-in">
+  <thead><tr><th>account</th><th>device_id</th></tr></thead>
+  <tbody>
+    {% for s in seen_in %}
+    <tr><td>{{ s.account }}</td><td><code>{{ s.device_id }}</code></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if !raw_tags.is_empty() %}
+<h2>raw tags</h2>
+<ul class="raw-tags">{% for t in raw_tags %}<li><code>{{ t }}</code></li>{% endfor %}</ul>
+{% endif %}
+
+{% match notes %}{% when Some with (n) %}<h2>notes</h2><p>{{ n }}</p>{% when None %}{% endmatch %}
+{% endblock %}

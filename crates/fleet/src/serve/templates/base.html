@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}fleet{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">fleet</span>
+    <nav>
+      <a href="/">inventory</a>
+      <a href="/paths">paths</a>
+      <a href="/observability">observability</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

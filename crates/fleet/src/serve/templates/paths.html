@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}fleet · paths{% endblock %}
+{% block content %}
+<h1>path health</h1>
+<p class="meta">latest probe run per target · destination-hop loss%/RTT/severity</p>
+{% if paths.is_empty() %}
+<p class="empty">No probe runs recorded yet.</p>
+{% else %}
+<table class="paths">
+  <thead>
+    <tr><th>target</th><th>addr</th><th>path</th><th>dest hop</th><th>loss%</th><th>avg ms</th><th>severity</th></tr>
+  </thead>
+  <tbody>
+    {% for p in paths %}
+    <tr class="sev-{{ p.dest_severity }}">
+      <td>{{ p.target_name }}</td>
+      <td><code>{{ p.target_addr }}</code></td>
+      <td>{{ p.path_type }}</td>
+      <td>{% match p.dest_host %}{% when Some with (h) %}<code>{{ h }}</code>{% when None %}<span class="muted">???</span>{% endmatch %}</td>
+      <td>{{ p.dest_loss_pct }}</td>
+      <td>{{ p.dest_avg_ms }}</td>
+      <td><span class="sev sev-{{ p.dest_severity }}">{{ p.dest_severity }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

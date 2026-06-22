@@ -8,5 +8,6 @@ pub mod export;
 pub mod merge;
 pub mod model;
 pub mod overrides;
+pub mod probe;
 pub mod secrets;
 pub mod tailscale;

@@ -3,6 +3,7 @@
 
 pub mod cf_sync;
 pub mod list;
+pub mod probe;
 pub mod show;
 pub mod ssh;
 pub mod sync;

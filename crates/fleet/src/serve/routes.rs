@@ -89,16 +89,68 @@ pub async fn get_node(State(state): State<AppState>, Path(id): Path<String>) -> 
 
 // ── GET /api/path-health ──────────────────────────────────────────────────────
 
-pub async fn get_path_health(State(_state): State<AppState>) -> impl IntoResponse {
-    // Hops populated by `fleet probe` (Task 10); stub until then.
-    Json(export::build_path_health_json(&[]))
+pub async fn get_path_health(State(state): State<AppState>) -> impl IntoResponse {
+    let conn = match ro_conn(&state) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+    match db::probe::latest_paths(&conn) {
+        Ok(paths) => {
+            let hops: Vec<serde_json::Value> = paths
+                .into_iter()
+                .map(|p| {
+                    serde_json::json!({
+                        "target_name": p.target_name,
+                        "target_addr": p.target_addr,
+                        "path_type": p.path_type,
+                        "dest_host": p.dest_host,
+                        "dest_loss_pct": p.dest_loss_pct,
+                        "dest_avg_ms": p.dest_avg_ms,
+                        "dest_severity": p.dest_severity,
+                    })
+                })
+                .collect();
+            Json(export::build_path_health_json(&hops)).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db query failed: {e:#}"),
+        )
+            .into_response(),
+    }
 }
 
 // ── GET /api/cf ──────────────────────────────────────────────────────────────
 
-pub async fn get_cf(State(_state): State<AppState>) -> impl IntoResponse {
-    // Zones populated by `fleet cf-sync` (Task 9); stub until then.
-    Json(export::build_cf_json(&[]))
+pub async fn get_cf(State(state): State<AppState>) -> impl IntoResponse {
+    let conn = match ro_conn(&state) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+    match db::cf::list_cf_zones(&conn) {
+        Ok(zones) => {
+            let zone_values: Vec<serde_json::Value> = zones
+                .into_iter()
+                .map(|z| {
+                    serde_json::json!({
+                        "id": z.id,
+                        "name": z.name,
+                        "status": z.status,
+                        "paused": z.paused,
+                        "healthy": z.healthy,
+                        "min_cert_expiry": z.min_cert_expiry
+                            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+                    })
+                })
+                .collect();
+            Json(export::build_cf_json(&zone_values)).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db query failed: {e:#}"),
+        )
+            .into_response(),
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

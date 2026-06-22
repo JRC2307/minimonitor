@@ -1,4 +1,5 @@
 pub mod alert;
+pub mod beszel;
 pub mod cloudflare;
 pub mod commands;
 pub mod config;

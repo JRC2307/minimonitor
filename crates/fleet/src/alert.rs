@@ -13,6 +13,58 @@ use crate::config::NtfyConfig;
 use crate::secrets;
 use anyhow::Context;
 
+// ─── Healthchecks heartbeat ───────────────────────────────────────────────────
+
+/// Ping the hc-ping.com dead-man's-switch endpoint.
+///
+/// URL form: `{base}/{ping_key}/{slug}?create=1`  (self-provisioning slug).
+///
+/// Returns an error (with the ping_key already redacted by the caller via
+/// `secrets::redact_ping`) on any network failure or non-2xx response.
+/// The 10 s timeout prevents this from blocking the cron slot.
+///
+/// **Security (R-8):** this function does NOT redact internally — the caller
+/// (`commands::heartbeat::run_with_base`) applies `secrets::redact_ping` so
+/// the key never reaches logs or stderr.
+/// Returns `true` if the string contains chars that would malform a URL path
+/// segment (`/`, `?`, `#`, or ASCII whitespace).
+fn has_url_path_unsafe(s: &str) -> bool {
+    s.chars()
+        .any(|c| matches!(c, '/' | '?' | '#') || c.is_ascii_whitespace())
+}
+
+pub async fn heartbeat(base: &str, ping_key: &str, slug: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !has_url_path_unsafe(ping_key),
+        "heartbeat: ping_key contains URL-unsafe characters (/, ?, #, or whitespace)"
+    );
+    anyhow::ensure!(
+        !has_url_path_unsafe(slug),
+        "heartbeat: slug contains URL-unsafe characters (/, ?, #, or whitespace)"
+    );
+
+    let url = format!(
+        "{}/{}/{}?create=1",
+        base.trim_end_matches('/'),
+        ping_key,
+        slug
+    );
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .context("heartbeat: building HTTP client")?;
+
+    http.get(&url)
+        .send()
+        .await
+        .context("heartbeat: GET failed")?
+        .error_for_status()
+        .context("heartbeat: non-2xx response")?;
+
+    Ok(())
+}
+
 /// Publish a message to the configured ntfy topic.
 ///
 /// `priority` must be 1–5. 4 is used for SSL warn and zone-health alerts.
@@ -105,6 +157,18 @@ pub mod tests {
         .unwrap();
 
         server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn heartbeat_rejects_ping_key_with_slash() {
+        // A ping_key containing '/' would malform the URL path — must be rejected.
+        let err = heartbeat("https://hc-ping.com", "bad/key", "mini-heartbeat").await;
+        assert!(err.is_err(), "expected error for ping_key containing '/'");
+        let msg = format!("{}", err.unwrap_err());
+        assert!(
+            msg.contains("URL-unsafe"),
+            "error message should mention URL-unsafe: {msg}"
+        );
     }
 
     #[tokio::test]

@@ -259,15 +259,19 @@ mod secrets_tests {
     }
 
     #[test]
-    fn redact_ping_strips_slug_and_key() {
+    fn redact_ping_scrubs_literal_key() {
         let err =
             anyhow::anyhow!("GET https://hc-ping.com/SECRETPINGKEY/mini-heartbeat?create=1 failed");
-        let display = redact_ping(err, "mini-heartbeat");
+        // 2nd arg is the ACTUAL secret key value — redact_ping scrubs it literally.
+        // The slug "mini-heartbeat" is NOT a secret and need not be absent.
+        let display = redact_ping(err, "SECRETPINGKEY");
         let s = format!("{display}");
         assert!(
             !s.contains("SECRETPINGKEY"),
             "ping key leaked in redact_ping: {s}"
         );
+        // Slug is not a secret — it may safely appear in the redacted output.
+        // (No assertion that "mini-heartbeat" is absent.)
     }
 
     #[test]

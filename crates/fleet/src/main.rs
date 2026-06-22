@@ -50,6 +50,11 @@ enum Commands {
     CfSync,
     /// Run the MTR path prober against configured targets; ntfy on breach.
     Probe,
+    /// Ping the hc-ping.com dead-man's-switch endpoint (external liveness check).
+    ///
+    /// URL: {base}/{ping_key}/{slug}?create=1  (auto-provisions the check).
+    /// Run every minute from a LaunchAgent / cron slot.
+    Heartbeat,
     /// Open an SSH session to a node via its validated Tailscale IP.
     Ssh {
         /// Node reference: fleet_id, hostname, or fqdn.
@@ -91,6 +96,15 @@ async fn main() -> anyhow::Result<()> {
             })?;
             fleet::commands::cf_sync::run(cf_cfg, cfg.ntfy.as_ref(), &db_path).await?;
             eprintln!("fleet cf-sync: done");
+        }
+        Some(Commands::Heartbeat) => {
+            let config_path = cli.config.clone().unwrap_or_else(default_config_path);
+            let cfg = fleet::config::load_config(&config_path)?;
+            let hc_cfg = cfg.healthchecks.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("fleet heartbeat: [healthchecks] section missing from config")
+            })?;
+            fleet::commands::heartbeat::run(hc_cfg).await?;
+            eprintln!("fleet heartbeat: ok");
         }
         Some(Commands::Probe) => {
             let config_path = cli.config.clone().unwrap_or_else(default_config_path);

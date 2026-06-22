@@ -130,16 +130,25 @@ pub fn redact(err: anyhow::Error) -> anyhow::Error {
     anyhow::anyhow!("{}", clean)
 }
 
-/// Redact an error that may contain the hc-ping `slug` as well.
-/// Same as `redact` but also removes the slug path segment.
-pub fn redact_ping(err: anyhow::Error, slug: &str) -> anyhow::Error {
+/// Redact an error that may contain the hc-ping `ping_key`.
+///
+/// Applies all standard redaction patterns first, then does a **literal**
+/// replacement of the raw `ping_key` value (R-8 — must never appear in error
+/// output, regardless of which base URL was used, including wiremock hosts in
+/// tests). The `slug` is **not** treated as a secret and is not scrubbed.
+/// Any hc-ping URL token already removed by the standard `redact_str` patterns
+/// is also covered.
+pub fn redact_ping(err: anyhow::Error, ping_key: &str) -> anyhow::Error {
     let chain = format!("{err:#}");
     let clean = redact_str(&chain);
-    // Additionally remove the slug from the URL path so only "[REDACTED]/[slug]" residue
-    // doesn't appear either. Replace the whole path after hc-ping.com/[REDACTED]/...
-    // The hc_ping_re already replaces the key; now also remove the slug from what remains.
-    let slug_re = Regex::new(&format!(r"\[REDACTED\]/{}", regex::escape(slug))).unwrap();
-    let clean = slug_re.replace_all(&clean, "[REDACTED]/[REDACTED]");
+    // Literal replacement of the raw ping_key value — catches any URL shape
+    // (hc-ping.com, wiremock 127.0.0.1, proxies, etc.).  Must come after
+    // redact_str so that Bearer/ntfy patterns are handled first.
+    let clean = if !ping_key.is_empty() {
+        clean.replace(ping_key, "[REDACTED]")
+    } else {
+        clean
+    };
     anyhow::anyhow!("{}", clean)
 }
 

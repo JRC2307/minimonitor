@@ -2,6 +2,7 @@
 //! lives in `merge`, `overrides`, `export`; this layer wires DB + HTTP + config.
 
 pub mod cf_sync;
+pub mod heartbeat;
 pub mod list;
 pub mod probe;
 pub mod show;

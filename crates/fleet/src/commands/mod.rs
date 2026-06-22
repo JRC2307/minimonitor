@@ -6,6 +6,7 @@ pub mod enroll;
 pub mod heartbeat;
 pub mod list;
 pub mod probe;
+pub mod serve;
 pub mod show;
 pub mod ssh;
 pub mod sync;

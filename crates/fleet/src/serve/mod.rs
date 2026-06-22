@@ -7,14 +7,28 @@
 //! - Never binds a real socket in tests; callers use `tower::ServiceExt::oneshot`.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context;
 use axum::{Router, routing::get};
 use rusqlite::{Connection, OpenFlags};
+use tower_http::services::ServeDir;
 
 use crate::config::ServeConfig;
 
 pub mod routes;
+pub mod templates;
+
+/// Default freshness window for the derived `online` field (spec §3.3), used by
+/// the simpler [`build_router`] entrypoint (e.g. Task-16 tests).
+const DEFAULT_ONLINE_THRESHOLD: Duration = Duration::from_secs(900);
+
+/// Filesystem dir holding the vendored static assets (htmx + css), served at
+/// `/static/` via `tower_http::services::ServeDir`. Checked into the repo —
+/// no CDN, no npm (spec §3.8).
+fn assets_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
+}
 
 /// Open a SQLite connection in strict read-only mode.
 ///
@@ -32,29 +46,62 @@ pub fn open_readonly(db_path: &Path) -> anyhow::Result<Connection> {
     Ok(conn)
 }
 
-/// Build the Axum router with `db_path` embedded in shared state.
-///
-/// Kept separate from `run` so tests can call `oneshot` without binding a port.
+/// Build the Axum router with `db_path` embedded in shared state, using default
+/// UI links and the default online threshold. Convenience entrypoint (Task-16
+/// `/api/*` tests call this).
 pub fn build_router(db_path: PathBuf) -> Router {
-    let state = routes::AppState { db_path };
+    build_router_with(routes::AppState {
+        db_path,
+        online_threshold: DEFAULT_ONLINE_THRESHOLD,
+        beszel_ui_url: String::new(),
+        kuma_ui_url: String::new(),
+    })
+}
 
+/// Build the full Axum router from an explicit [`routes::AppState`]: the four
+/// HTML pages (spec §3.8), the four `/api/*` JSON endpoints (Task 16), and the
+/// vendored static assets at `/static/` (`tower_http::services::ServeDir`).
+pub fn build_router_with(state: routes::AppState) -> Router {
     Router::new()
+        // HTML views (askama, server-rendered)
+        .route("/", get(routes::get_index))
+        .route("/node/{id}", get(routes::get_node_html))
+        .route("/paths", get(routes::get_paths_html))
+        .route("/observability", get(routes::get_observability_html))
+        // JSON API (Task 16)
         .route("/api/fleet", get(routes::get_fleet))
         .route("/api/node/{id}", get(routes::get_node))
         .route("/api/path-health", get(routes::get_path_health))
         .route("/api/cf", get(routes::get_cf))
+        // Vendored CSS + HTMX (no CDN)
+        .nest_service("/static", ServeDir::new(assets_dir()))
         .with_state(state)
 }
 
 /// Bind and serve on `cfg.bind` (tailnet IP resolved externally; tests never
 /// call this).
 pub async fn run(cfg: &ServeConfig, db_path: &Path) -> anyhow::Result<()> {
+    run_with(cfg, db_path, DEFAULT_ONLINE_THRESHOLD).await
+}
+
+/// Bind and serve with a caller-supplied online threshold (wired from
+/// `Config::online_threshold_secs`).
+pub async fn run_with(
+    cfg: &ServeConfig,
+    db_path: &Path,
+    online_threshold: Duration,
+) -> anyhow::Result<()> {
     let addr: std::net::SocketAddr = cfg
         .bind
         .parse()
         .with_context(|| format!("fleet serve: invalid bind address {:?}", cfg.bind))?;
 
-    let router = build_router(db_path.to_path_buf());
+    let router = build_router_with(routes::AppState {
+        db_path: db_path.to_path_buf(),
+        online_threshold,
+        beszel_ui_url: cfg.beszel_ui_url.clone(),
+        kuma_ui_url: cfg.kuma_ui_url.clone(),
+    });
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -317,5 +364,308 @@ mod tests {
         assert!(v["nodes"].is_array());
         assert!(node["online"].is_number(), "online must be numeric");
         assert!(node["tier"].is_string(), "tier must be a string");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  HTML views (askama) + vendored assets — Task 17 (spec §3.8)
+    // ════════════════════════════════════════════════════════════════════════
+
+    use crate::db::nodes::upsert_node_seen;
+    use crate::model::DedupeKind as Dk;
+
+    /// Build the full router (HTML + assets) against a seeded DB path, with
+    /// concrete Beszel/Kuma UI links and a generous online threshold so
+    /// just-seeded nodes read as online.
+    fn full_router(db_path: PathBuf) -> Router {
+        build_router_with(routes::AppState {
+            db_path,
+            online_threshold: Duration::from_secs(900),
+            beszel_ui_url: "http://intel-mini:8090".to_owned(),
+            kuma_ui_url: "http://intel-mini:3001".to_owned(),
+        })
+    }
+
+    async fn html_get(router: Router, uri: &str) -> (StatusCode, String) {
+        let (status, body) = oneshot_get(router, uri).await;
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    // ── index_renders_inventory ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn index_renders_inventory() {
+        // alpha: machinekey (no ~), online. zeta: fuzzy (~), offline (stale).
+        let mut alpha = make_node("fleet-01", "alpha");
+        alpha.last_seen = Utc::now();
+        let mut zeta = make_node("fleet-02", "zeta");
+        zeta.dedupe_key_kind = Dk::Fuzzy;
+        zeta.last_seen = Utc::now() - chrono::Duration::hours(2); // offline by threshold
+
+        let f = seed_db(&[alpha, zeta]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/").await;
+
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        // Both hostnames present.
+        assert!(html.contains("alpha"), "alpha missing:\n{html}");
+        assert!(html.contains("zeta"), "zeta missing:\n{html}");
+        // Online ● and offline ○ glyphs from DERIVED online.
+        assert!(html.contains('\u{25cf}'), "online glyph ● missing");
+        assert!(html.contains('\u{25cb}'), "offline glyph ○ missing");
+        // The fuzzy row carries a ~ marker.
+        assert!(html.contains('~'), "fuzzy ~ marker missing:\n{html}");
+    }
+
+    #[tokio::test]
+    async fn index_partial_returns_table_only() {
+        let f = seed_db(&[make_node("fleet-01", "alpha")]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/?partial=1").await;
+        assert_eq!(status, StatusCode::OK);
+        // Fragment: a <table>, but NOT the full document shell.
+        assert!(html.contains("<table"), "partial should contain the table");
+        assert!(
+            !html.contains("<html"),
+            "partial must be a fragment, not the full page:\n{html}"
+        );
+    }
+
+    // ── node_page_renders_detail ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn node_page_renders_detail() {
+        let n = make_node("fleet-01", "alpha");
+        let f = seed_db(std::slice::from_ref(&n));
+        // Persist two seen_in provenance pairs (get() does not populate seen_in).
+        {
+            let conn = db::open(f.path()).unwrap();
+            upsert_node_seen(
+                &conn, "personal", "dev-aaa", "fleet-01", "mk:1", None, "t", 1,
+            )
+            .unwrap();
+            upsert_node_seen(
+                &conn,
+                "client-acme",
+                "dev-bbb",
+                "fleet-01",
+                "mk:1",
+                None,
+                "t",
+                1,
+            )
+            .unwrap();
+        }
+
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/node/fleet-01").await;
+
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        // Every seen_in pair appears.
+        assert!(html.contains("personal"), "account personal missing");
+        assert!(html.contains("dev-aaa"), "device dev-aaa missing");
+        assert!(html.contains("client-acme"), "account client-acme missing");
+        assert!(html.contains("dev-bbb"), "device dev-bbb missing");
+        // dedupe_key_kind is surfaced.
+        assert!(
+            html.contains("machinekey"),
+            "dedupe_key_kind missing:\n{html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn node_page_404_for_missing() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, _html) = html_get(router, "/node/no-such").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    // ── paths_page ───────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn paths_page_renders_dest_hop_severities() {
+        use crate::db::probe::{RunMeta, insert_run};
+        use crate::probe::{HopStat, PathType, Severity};
+
+        let f = seed_db(&[]);
+        {
+            let mut conn = db::open(f.path()).unwrap();
+            let hops = vec![
+                HopStat {
+                    ttl: 1,
+                    host: Some("192.168.1.1".to_owned()),
+                    sent: 10,
+                    recv: 10,
+                    loss_pct: 0.0,
+                    last_ms: 2.0,
+                    avg_ms: 2.0,
+                    best_ms: 1.0,
+                    worst_ms: 3.0,
+                    stddev_ms: 0.5,
+                    severity: Severity::Ok,
+                },
+                // destination hop: breach severity, 30% loss.
+                HopStat {
+                    ttl: 2,
+                    host: Some("1.1.1.1".to_owned()),
+                    sent: 10,
+                    recv: 7,
+                    loss_pct: 30.0,
+                    last_ms: 410.0,
+                    avg_ms: 410.0,
+                    best_ms: 400.0,
+                    worst_ms: 420.0,
+                    stddev_ms: 5.0,
+                    severity: Severity::Breach,
+                },
+            ];
+            insert_run(
+                &mut conn,
+                &RunMeta {
+                    target_name: "cloudflare-dns",
+                    target_addr: "1.1.1.1",
+                    path_type: PathType::Underlay,
+                    cycles: 10,
+                    breached: true,
+                    ts: Utc::now(),
+                },
+                &hops,
+            )
+            .unwrap();
+        }
+
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/paths").await;
+
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(html.contains("cloudflare-dns"), "target name missing");
+        // Destination hop severity surfaced.
+        assert!(html.contains("breach"), "dest severity missing:\n{html}");
+        // Destination hop address surfaced (the dest, not the intermediate).
+        assert!(html.contains("1.1.1.1"), "dest hop addr missing");
+    }
+
+    // ── observability_page ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn observability_page_renders_zones_links_and_rollup() {
+        use crate::cloudflare::CfZone;
+        use crate::db::cf::upsert_cf_zone;
+        use chrono::{TimeZone, Utc as ChronoUtc};
+
+        // 2 nodes: one online, one offline → rollup 1/1.
+        let mut online = make_node("fleet-01", "alpha");
+        online.last_seen = Utc::now();
+        let mut offline = make_node("fleet-02", "beta");
+        offline.last_seen = Utc::now() - chrono::Duration::hours(3);
+        let f = seed_db(&[online, offline]);
+        {
+            let conn = db::open(f.path()).unwrap();
+            upsert_cf_zone(
+                &conn,
+                &CfZone {
+                    id: "z1".to_owned(),
+                    name: "example.com".to_owned(),
+                    status: "active".to_owned(),
+                    paused: false,
+                    healthy: true,
+                    min_cert_expiry: Some(
+                        ChronoUtc.with_ymd_and_hms(2026, 9, 20, 0, 0, 0).unwrap(),
+                    ),
+                },
+            )
+            .unwrap();
+        }
+
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/observability").await;
+
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        // CF zone rendered.
+        assert!(html.contains("example.com"), "cf zone missing:\n{html}");
+        // Links OUT to Beszel :8090 and Kuma :3001 (R-10: links only).
+        assert!(
+            html.contains("http://intel-mini:8090"),
+            "Beszel deep-link missing"
+        );
+        assert!(
+            html.contains("http://intel-mini:3001"),
+            "Kuma deep-link missing"
+        );
+        // Registry-derived online rollup (1 online of 2) — use exact template wording.
+        assert!(
+            html.contains("1 online"),
+            "rollup online count missing (expected '1 online'):\n{html}"
+        );
+        assert!(
+            html.contains("1 offline"),
+            "rollup offline count missing (expected '1 offline'):\n{html}"
+        );
+        assert!(
+            html.contains("of 2 nodes"),
+            "rollup total missing (expected 'of 2 nodes'):\n{html}"
+        );
+    }
+
+    /// R-10: `/observability` must link out only — NEVER embed a Kuma
+    /// socket.io call. Assert no `socket.io`/`io(`/`emit(` client glue is present.
+    #[tokio::test]
+    async fn observability_page_does_not_embed_kuma_socketio() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/observability").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let lower = html.to_lowercase();
+        assert!(
+            !lower.contains("socket.io"),
+            "R-10 violated: socket.io reference embedded:\n{html}"
+        );
+        assert!(
+            !lower.contains("monitorlist"),
+            "R-10 violated: Kuma monitorList referenced:\n{html}"
+        );
+        // No socket.io client bootstrap in any quoting style, engine.io, or monitorList.
+        assert!(
+            !lower.contains("io(\""),
+            "R-10 violated: socket.io client constructed (double-quote):\n{html}"
+        );
+        assert!(
+            !lower.contains("io('"),
+            "R-10 violated: socket.io client constructed (single-quote):\n{html}"
+        );
+        assert!(
+            !lower.contains("engine.io"),
+            "R-10 violated: engine.io reference embedded:\n{html}"
+        );
+    }
+
+    // ── vendored assets (tower-http ServeDir, no CDN) ────────────────────────
+
+    #[tokio::test]
+    async fn vendored_htmx_asset_served() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/static/htmx.min.js").await;
+        assert_eq!(status, StatusCode::OK, "htmx.min.js should be served");
+        assert!(!body.is_empty(), "htmx.min.js should be non-empty");
+        // Sanity: it really is the htmx library, not an error page.
+        let txt = String::from_utf8_lossy(&body);
+        assert!(txt.contains("htmx"), "served file is not htmx");
+        // Byte-floor: the real htmx.min.js is ~48 KB; anything smaller is truncated/wrong.
+        assert!(
+            body.len() > 40_000,
+            "htmx.min.js too small ({} bytes) — may be wrong file",
+            body.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn vendored_css_asset_served() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/static/app.css").await;
+        assert_eq!(status, StatusCode::OK, "app.css should be served");
+        assert!(!body.is_empty(), "app.css should be non-empty");
     }
 }

@@ -1,0 +1,21 @@
+<table id="inventory" hx-get="/?partial=1" hx-trigger="every 30s" hx-swap="outerHTML">
+  <thead>
+    <tr>
+      <th>hostname</th><th>tier</th><th>online</th>
+      <th>site</th><th>role</th><th>owner</th><th>last seen</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr class="{% if r.fuzzy %}fuzzy{% endif %}">
+      <td><a href="/node/{{ r.fleet_id }}">{{ r.hostname }}</a>{% if r.fuzzy %} <span class="fuzzy-mark" title="fuzzy-merged">~</span>{% endif %}</td>
+      <td>{{ r.tier }}</td>
+      <td class="online">{% if r.online %}<span class="up">●</span>{% else %}<span class="down">○</span>{% endif %}</td>
+      <td>{{ r.site }}</td>
+      <td>{{ r.role }}</td>
+      <td>{{ r.owner }}</td>
+      <td>{{ r.last_seen }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

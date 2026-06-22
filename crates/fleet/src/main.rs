@@ -95,7 +95,8 @@ async fn main() -> anyhow::Result<()> {
             println!();
         }
         Some(Commands::Doctor { compose }) => {
-            run_doctor(&compose)?;
+            let config_path = cli.config.clone().unwrap_or_else(default_config_path);
+            run_doctor(&compose, &config_path)?;
         }
         Some(Commands::CfSync) => {
             let config_path = cli.config.clone().unwrap_or_else(default_config_path);
@@ -207,7 +208,7 @@ fn default_config_path() -> std::path::PathBuf {
     std::path::PathBuf::from(home).join(".config/fleet/fleet.toml")
 }
 
-fn run_doctor(compose_path: &std::path::Path) -> anyhow::Result<()> {
+fn run_doctor(compose_path: &std::path::Path, config_path: &std::path::Path) -> anyhow::Result<()> {
     eprintln!(
         "fleet doctor: checking bind addresses in {}",
         compose_path.display()
@@ -217,12 +218,21 @@ fn run_doctor(compose_path: &std::path::Path) -> anyhow::Result<()> {
         let yaml = std::fs::read_to_string(compose_path)
             .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", compose_path.display()))?;
         fleet::doctor::check_compose_binds(&yaml)?;
-        eprintln!("fleet doctor: bind-address check PASSED");
+        eprintln!("fleet doctor: compose bind-address check PASSED");
     } else {
         eprintln!(
-            "fleet doctor: {} not found, skipping bind check",
+            "fleet doctor: {} not found, skipping compose bind check",
             compose_path.display()
         );
+    }
+
+    // R-5 (spec §3.8): also validate the native `fleet serve` bind (:8099).
+    if config_path.exists() {
+        let cfg = fleet::config::load_config(config_path)?;
+        if let Some(serve) = cfg.serve.as_ref() {
+            fleet::doctor::check_serve_bind(&serve.bind)?;
+            eprintln!("fleet doctor: serve bind-address check PASSED");
+        }
     }
 
     eprintln!("fleet doctor: all checks passed");

@@ -1,0 +1,71 @@
+:root {
+  --bg: #0f1115;
+  --fg: #d7dce2;
+  --muted: #7b828c;
+  --line: #232833;
+  --accent: #5aa9e6;
+  --up: #4ec07a;
+  --down: #6b7280;
+  --warn: #e0a33e;
+  --breach: #e05c5c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+.topbar .brand { font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+.topbar nav a { color: var(--fg); text-decoration: none; margin-right: 1rem; }
+.topbar nav a:hover { color: var(--accent); }
+
+main { padding: 1.25rem; max-width: 1100px; }
+
+h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
+h2 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; color: var(--accent); }
+
+.meta { color: var(--muted); margin: 0 0 1rem; }
+.empty { color: var(--muted); font-style: italic; }
+.muted { color: var(--muted); }
+
+table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+tr:hover td { background: #161a21; }
+
+a { color: var(--accent); }
+
+.online .up, .up { color: var(--up); }
+.online .down, .down { color: var(--down); }
+
+tr.fuzzy td { background: #1a1710; }
+.fuzzy-mark { color: var(--warn); font-weight: 700; }
+
+.dedupe { color: var(--accent); }
+
+dl.detail { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+dl.detail dt { color: var(--muted); }
+dl.detail dd { margin: 0; }
+
+.sev { padding: 0.05rem 0.4rem; border-radius: 3px; }
+.sev-ok .sev { color: var(--up); }
+.sev-warn .sev { color: var(--warn); }
+.sev-breach .sev { color: var(--breach); }
+tr.sev-breach td { background: #1f1213; }
+tr.sev-warn td { background: #1d1810; }
+
+.deeplinks ul { list-style: none; padding: 0; }
+.deeplink { display: inline-block; padding: 0.4rem 0; }
+
+code { color: #b8c2cc; }

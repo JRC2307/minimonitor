@@ -20,7 +20,9 @@ chrono = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 axum = { workspace = true }
-askama = { workspace = true }
+# `config` feature: read `askama.toml` so templates live under `src/serve/templates`
+# (spec §3.1) instead of the default `$CRATE/templates` dir.
+askama = { workspace = true, features = ["config"] }
 tower-http = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

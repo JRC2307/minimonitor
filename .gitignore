@@ -5,3 +5,4 @@ deploy/.env
 deploy/*_data/
 deploy/ntfy/
 deploy/certs/
+.superpowers/

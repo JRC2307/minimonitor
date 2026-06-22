@@ -25,6 +25,7 @@ askama = "0.13"
 tower-http = { version = "0.6", features = ["fs"] }
 async-trait = "0.1"
 ipnet = "2"
+regex = "1"
 tower = "0.5"
 
 [profile.release]

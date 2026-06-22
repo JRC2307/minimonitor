@@ -901,6 +901,7 @@ dependencies = [
  "ipnet",
  "minimonitor-core",
  "predicates",
+ "regex",
  "reqwest",
  "rusqlite",
  "rusqlite_migration",

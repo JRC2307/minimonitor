@@ -26,6 +26,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
 ipnet = { workspace = true }
+regex = { workspace = true }
 trippy-core = "=0.13.0"
 # rust_socketio: deferred to Task 12 (Kuma) — pulls native-tls/OpenSSL, decision owned there
 

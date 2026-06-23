@@ -284,10 +284,18 @@ pub async fn get_node_html(State(state): State<AppState>, Path(id): Path<String>
 
     let host_snapshot = match db::host::latest_for_node(&conn, &node.fleet_id) {
         Ok(Some(hs)) => {
+            let node_cmds =
+                db::host::commands_by_pid_for_node(&conn, &node.fleet_id).unwrap_or_default();
             let ports = db::host::ports_for_node(&conn, &node.fleet_id)
                 .unwrap_or_default()
                 .into_iter()
                 .map(|p| templates::HostPortRow {
+                    service: crate::service_label::resolve_service(
+                        p.port,
+                        node_cmds.get(&p.pid).map(String::as_str),
+                        &p.process,
+                        &state.labels,
+                    ),
                     port: p.port,
                     proto: p.proto,
                     process: p.process,

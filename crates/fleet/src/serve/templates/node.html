@@ -54,10 +54,10 @@
 {% if !snap.ports.is_empty() %}
 <h3>listening ports ({{ snap.ports.len() }})</h3>
 <table class="ports">
-  <thead><tr><th>port</th><th>proto</th><th>process</th><th>pid</th><th>bind</th></tr></thead>
+  <thead><tr><th>service</th><th>port</th><th>proto</th><th>process</th><th>pid</th><th>bind</th></tr></thead>
   <tbody>
     {% for p in snap.ports %}
-    <tr><td>{{ p.port }}</td><td>{{ p.proto }}</td><td><code>{{ p.process }}</code></td><td>{{ p.pid }}</td><td><code>{{ p.bind }}</code></td></tr>
+    <tr><td class="service">{{ p.service }}</td><td>{{ p.port }}</td><td>{{ p.proto }}</td><td class="muted"><code>{{ p.process }}</code></td><td class="muted">{{ p.pid }}</td><td><code>{{ p.bind }}</code></td></tr>
     {% endfor %}
   </tbody>
 </table>

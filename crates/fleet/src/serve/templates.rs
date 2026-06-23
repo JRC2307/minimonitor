@@ -56,6 +56,7 @@ pub struct InventoryTable {
 // ── Host snapshot section (on /node/{id}) ────────────────────────────────────
 
 pub struct HostPortRow {
+    pub service: String, // resolved friendly name
     pub port: u16,
     pub proto: String,
     pub process: String,

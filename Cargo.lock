@@ -1058,7 +1058,6 @@ dependencies = [
  "clap",
  "figment",
  "futures-util",
- "ipnet",
  "minimonitor-core",
  "predicates",
  "regex",

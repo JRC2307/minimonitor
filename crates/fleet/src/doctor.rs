@@ -9,24 +9,14 @@
 //!    and return the names of any that fail. Values are never returned or logged.
 
 use anyhow::Context;
-use ipnet::Ipv4Net;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
-use std::sync::OnceLock;
 
-// ─── CGNAT range ─────────────────────────────────────────────────────────────
-
-/// `100.64.0.0/10` — the CGNAT range used by Tailscale.
-fn cgnat_net() -> Ipv4Net {
-    static NET: OnceLock<Ipv4Net> = OnceLock::new();
-    *NET.get_or_init(|| "100.64.0.0/10".parse().unwrap())
-}
-
-fn is_cgnat(ip: Ipv4Addr) -> bool {
-    cgnat_net().contains(&ip)
-}
+// Delegate: core owns the IPv6-aware CGNAT / bind validator; no ipnet dep needed here.
+pub(crate) use minimonitor_core::net::is_cgnat;
+use minimonitor_core::net::validate_tailnet_bind;
 
 // ─── Compose YAML structures (minimal, for port extraction) ──────────────────
 
@@ -157,44 +147,9 @@ fn validate_port_bind(svc_name: &str, port_str: &str) -> Result<(), String> {
 /// (deferred to install-time resolution). Rejected: `0.0.0.0:PORT`,
 /// non-CGNAT literal IPs, and a host-less `PORT` (implicit wildcard).
 pub fn check_serve_bind(bind: &str) -> anyhow::Result<()> {
-    // Split off the trailing `:PORT`. IPv6 is out of scope for Phase 1 (v4-only),
-    // so the host portion is everything before the last colon.
-    let Some((host, port)) = bind.rsplit_once(':') else {
-        // No colon at all → a bare port (or host) → implicit wildcard bind.
-        anyhow::bail!(
-            "serve.bind `{bind}` has no explicit host IP (implicit wildcard) — \
-             bind the host tailnet IP, e.g. `${{HOST_TS_IP}}:8099`"
-        );
-    };
-
-    if host.is_empty() {
-        anyhow::bail!(
-            "serve.bind `{bind}` has an empty host (implicit wildcard) — \
-             bind the host tailnet IP, e.g. `${{HOST_TS_IP}}:8099`"
-        );
-    }
-    if port.is_empty() {
-        anyhow::bail!("serve.bind `{bind}` has no port");
-    }
-    if host == "0.0.0.0" {
-        anyhow::bail!(
-            "serve.bind `{bind}` binds to 0.0.0.0 (wildcard — must bind the tailnet CGNAT IP)"
-        );
-    }
-
-    match Ipv4Addr::from_str(host) {
-        Ok(ip) => {
-            if !is_cgnat(ip) {
-                anyhow::bail!(
-                    "serve.bind `{bind}` host IP `{ip}` is not in the CGNAT range 100.64.0.0/10"
-                );
-            }
-            Ok(())
-        }
-        // Template variable (e.g. `${HOST_TS_IP}`) — accept; install.sh validates
-        // the resolved value at runtime. Only literal IPs we can parse are rejected.
-        Err(_) => Ok(()),
-    }
+    // Delegate to the IPv6-aware core validator (§3.2).
+    // The existing tests assert only .is_ok()/.is_err() so they stay GREEN.
+    validate_tailnet_bind(bind).map_err(|e| anyhow::anyhow!("serve.bind {e}"))
 }
 
 // ─── Secret-resolvability check ──────────────────────────────────────────────

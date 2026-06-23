@@ -1,0 +1,19 @@
+{
+  "type": "port",
+  "name": "db-01",
+  "hostname": "100.64.0.5",
+  "port": 5432,
+  "interval": 60,
+  "maxretries": 1,
+  "retryInterval": 60,
+  "resendInterval": 0,
+  "upsideDown": false,
+  "accepted_statuscodes": [
+    "200-299"
+  ],
+  "kafkaProducerBrokers": [],
+  "kafkaProducerSaslOptions": {},
+  "notificationIDList": {
+    "1": true
+  }
+}

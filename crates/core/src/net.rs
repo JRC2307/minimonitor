@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Serialize, PartialEq, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct PortRow {
     pub port: u16,
     pub proto: String,
@@ -25,8 +25,18 @@ pub fn parse_listen_line(line: &str) -> Option<PortRow> {
     // NAME is addr:port (no "->" for LISTEN). Split on the last ':'.
     let (addr, port_str) = name.rsplit_once(':')?;
     let port: u16 = port_str.parse().ok()?;
-    let bind = if addr.is_empty() { "*".to_owned() } else { addr.to_owned() };
-    Some(PortRow { port, proto, process: parts[0].to_owned(), pid, bind })
+    let bind = if addr.is_empty() {
+        "*".to_owned()
+    } else {
+        addr.to_owned()
+    };
+    Some(PortRow {
+        port,
+        proto,
+        process: parts[0].to_owned(),
+        pid,
+        bind,
+    })
 }
 
 pub fn parse_listen_output(output: &str) -> Vec<PortRow> {
@@ -34,13 +44,16 @@ pub fn parse_listen_output(output: &str) -> Vec<PortRow> {
 }
 
 pub fn listening_ports() -> Vec<PortRow> {
-    let Ok(out) = Command::new("lsof").args(["-nP", "-iTCP", "-sTCP:LISTEN"]).output() else {
+    let Ok(out) = Command::new("lsof")
+        .args(["-nP", "-iTCP", "-sTCP:LISTEN"])
+        .output()
+    else {
         return Vec::new();
     };
     parse_listen_output(&String::from_utf8_lossy(&out.stdout))
 }
 
-#[derive(Clone, Serialize, PartialEq, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct ConnGroup {
     pub process: String,
     pub pid: u32,
@@ -54,22 +67,32 @@ pub fn parse_estab_output(output: &str) -> Vec<ConnGroup> {
         if parts.len() < 9 {
             continue;
         }
-        let Ok(pid) = parts[1].parse::<u32>() else { continue };
+        let Ok(pid) = parts[1].parse::<u32>() else {
+            continue;
+        };
         *counts.entry((parts[0].to_owned(), pid)).or_insert(0) += 1;
     }
-    counts.into_iter()
-        .map(|((process, pid), count)| ConnGroup { process, pid, count })
+    counts
+        .into_iter()
+        .map(|((process, pid), count)| ConnGroup {
+            process,
+            pid,
+            count,
+        })
         .collect()
 }
 
 pub fn established_connections() -> Vec<ConnGroup> {
-    let Ok(out) = Command::new("lsof").args(["-nP", "-iTCP", "-sTCP:ESTABLISHED"]).output() else {
+    let Ok(out) = Command::new("lsof")
+        .args(["-nP", "-iTCP", "-sTCP:ESTABLISHED"])
+        .output()
+    else {
         return Vec::new();
     };
     parse_estab_output(&String::from_utf8_lossy(&out.stdout))
 }
 
-#[derive(Clone, Serialize, Default, PartialEq, Debug)]
+#[derive(Clone, Serialize, Deserialize, Default, PartialEq, Debug)]
 pub struct NetIdentity {
     pub hostname: String,
     pub lan_ip: Option<String>,
@@ -87,13 +110,18 @@ fn first_line(cmd: &str, args: &[&str]) -> Option<String> {
 
 /// The interface carrying the default route (e.g. "en0", "en1"), per `route get default`.
 fn default_interface() -> Option<String> {
-    let out = Command::new("route").args(["-n", "get", "default"]).output().ok()?;
+    let out = Command::new("route")
+        .args(["-n", "get", "default"])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("interface:").map(|s| s.trim().to_owned()))
+    String::from_utf8_lossy(&out.stdout).lines().find_map(|l| {
+        l.trim()
+            .strip_prefix("interface:")
+            .map(|s| s.trim().to_owned())
+    })
 }
 
 /// IPv4 of the active interface — the default-route one first, then common fallbacks.
@@ -121,18 +149,216 @@ pub fn network_identity(hostname: String) -> NetIdentity {
     }
 }
 
+// ─── Tailnet bind validator (§3.2) ───────────────────────────────────────────
+//
+// Dependency-free, IPv6-aware. No `ipnet` — hand-rolled octet/segment checks.
+// Used by both `fleet doctor` and the agent self-guard before binding.
+
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+/// RFC 6598 CGNAT `100.64.0.0/10` — the Tailscale IPv4 overlay range.
+pub fn is_cgnat(ip: Ipv4Addr) -> bool {
+    let o = ip.octets();
+    o[0] == 100 && (64..=127).contains(&o[1])
+}
+
+/// Tailscale's IPv6 ULA prefix `fd7a:115c:a1e0::/48`.
+fn is_tailscale_v6(ip: Ipv6Addr) -> bool {
+    let s = ip.segments();
+    s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0
+}
+
+/// True for bare loopback host strings (before bracket-stripping).
+fn is_loopback_host(host: &str) -> bool {
+    host == "127.0.0.1" || host.starts_with("127.") || host == "::1" || host == "[::1]"
+}
+
+/// Validate a bind `HOST:PORT` string.
+///
+/// **ACCEPTS**: loopback (127.x, `::1`), IPv4 CGNAT `100.64.0.0/10` literals,
+/// Tailscale ULA IPv6 `fd7a:115c:a1e0::/48` literals, and `${VAR}`/`{{ }}`
+/// template strings whose host portion is not a parseable IP.
+///
+/// **REJECTS**: `0.0.0.0`, `[::]`/`:::PORT`, `[fe80::...]`, non-CGNAT public v4,
+/// bare port (no host), empty host, and missing port.
+pub fn validate_tailnet_bind(bind: &str) -> Result<(), String> {
+    // rsplit_once(':') on `[::]:9909` would give host=`[:]`, port=`9909` — wrong.
+    // We bracket-strip AFTER splitting off the trailing :PORT segment.
+    let (host_raw, port) = match bind.rsplit_once(':') {
+        Some((h, p)) => (h, p),
+        None => {
+            return Err(format!(
+                "`{bind}` has no explicit host (implicit wildcard — bare port or no port)"
+            ));
+        }
+    };
+
+    if port.is_empty() {
+        return Err(format!("`{bind}` has no port"));
+    }
+
+    // Strip IPv6 brackets: `[::1]` → `::1`, `[::]` → `::`.
+    let host = host_raw.trim_start_matches('[').trim_end_matches(']');
+
+    if host.is_empty() {
+        return Err(format!("`{bind}` has an empty host (implicit wildcard)"));
+    }
+
+    // Check loopback before IP-parsing (handles both `127.x.x.x` and `[::1]`/`::1`).
+    if is_loopback_host(host) {
+        return Ok(());
+    }
+
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) if is_cgnat(ip) => Ok(()),
+        Ok(IpAddr::V4(ip)) => Err(format!("`{bind}` host {ip} is not in CGNAT 100.64.0.0/10")),
+        Ok(IpAddr::V6(ip)) if is_tailscale_v6(ip) => Ok(()),
+        Ok(IpAddr::V6(ip)) => Err(format!(
+            "`{bind}` host {ip} is not a Tailscale ULA (fd7a:115c:a1e0::/48)"
+        )),
+        // Only non-IP-parseable strings with template markers are treated as
+        // install-time templates. Bare hostnames without `$`/`{` are rejected.
+        Err(_) if host.contains('$') || host.contains('{') => Ok(()),
+        Err(_) => Err(format!(
+            "`{bind}` host `{host}` is neither a tailnet IP nor a ${{VAR}} template"
+        )),
+    }
+}
+
+// ─── Unit tests ──────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // ── is_cgnat ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn cgnat_range_boundaries() {
+        assert!(is_cgnat("100.64.0.0".parse().unwrap()));
+        assert!(is_cgnat("100.64.0.1".parse().unwrap()));
+        assert!(is_cgnat("100.127.255.255".parse().unwrap()));
+    }
+
+    #[test]
+    fn outside_cgnat() {
+        assert!(!is_cgnat("100.63.255.255".parse().unwrap())); // just below
+        assert!(!is_cgnat("100.128.0.0".parse().unwrap())); // just above
+        assert!(!is_cgnat("192.168.1.5".parse().unwrap()));
+        assert!(!is_cgnat("10.0.0.1".parse().unwrap()));
+        assert!(!is_cgnat("0.0.0.0".parse().unwrap()));
+    }
+
+    // ── validate_tailnet_bind — ACCEPT ────────────────────────────────────────
+
+    #[test]
+    fn accept_ipv4_loopback() {
+        assert!(validate_tailnet_bind("127.0.0.1:9909").is_ok());
+        assert!(validate_tailnet_bind("127.1.2.3:9909").is_ok());
+    }
+
+    #[test]
+    fn accept_ipv6_loopback() {
+        assert!(validate_tailnet_bind("[::1]:9909").is_ok());
+    }
+
+    #[test]
+    fn accept_cgnat_boundaries() {
+        assert!(validate_tailnet_bind("100.64.0.1:9909").is_ok());
+        assert!(validate_tailnet_bind("100.127.255.255:9909").is_ok());
+        assert!(validate_tailnet_bind("100.96.1.2:9909").is_ok());
+    }
+
+    #[test]
+    fn accept_tailscale_ula_v6() {
+        assert!(validate_tailnet_bind("[fd7a:115c:a1e0::1]:9909").is_ok());
+    }
+
+    #[test]
+    fn accept_template_dollar_brace() {
+        assert!(validate_tailnet_bind("${HOST_TS_IP}:9909").is_ok());
+        assert!(validate_tailnet_bind("${BIND_ADDR}:9909").is_ok());
+    }
+
+    #[test]
+    fn accept_template_double_brace() {
+        assert!(validate_tailnet_bind("{{ ts_ip }}:9909").is_ok());
+    }
+
+    // ── validate_tailnet_bind — REJECT ────────────────────────────────────────
+
+    #[test]
+    fn reject_ipv4_wildcard() {
+        assert!(validate_tailnet_bind("0.0.0.0:9909").is_err());
+    }
+
+    #[test]
+    fn reject_ipv6_wildcard_bracketed() {
+        // THE critical bug: IPv4-only rsplit would accept this via template fall-through
+        assert!(validate_tailnet_bind("[::]:9909").is_err());
+    }
+
+    #[test]
+    fn reject_ipv6_wildcard_bare() {
+        // `:::9909` — rsplit_once gives host=`::`, port=`9909`
+        assert!(validate_tailnet_bind(":::9909").is_err());
+    }
+
+    #[test]
+    fn reject_link_local_v6() {
+        assert!(validate_tailnet_bind("[fe80::1]:9909").is_err());
+    }
+
+    #[test]
+    fn reject_public_ipv4() {
+        assert!(validate_tailnet_bind("1.2.3.4:9909").is_err());
+        assert!(validate_tailnet_bind("203.0.113.1:9909").is_err());
+    }
+
+    #[test]
+    fn reject_just_below_cgnat() {
+        assert!(validate_tailnet_bind("100.63.255.255:9909").is_err());
+    }
+
+    #[test]
+    fn reject_bare_port() {
+        assert!(validate_tailnet_bind(":9909").is_err());
+        assert!(validate_tailnet_bind("9909").is_err());
+    }
+
+    #[test]
+    fn reject_no_port() {
+        assert!(validate_tailnet_bind("127.0.0.1").is_err());
+        assert!(validate_tailnet_bind("100.96.1.2").is_err());
+    }
+
+    #[test]
+    fn reject_empty_string() {
+        assert!(validate_tailnet_bind("").is_err());
+    }
+}
+
+// ─── lsof / port-parsing tests ───────────────────────────────────────────────
+
+#[cfg(test)]
+mod lsof_tests {
+    use super::*;
+
     #[test]
     fn parses_ipv4_listen_line() {
-        let line = "node      8412 caguabot   23u  IPv4 0x1234      0t0  TCP 127.0.0.1:3000 (LISTEN)";
+        let line =
+            "node      8412 caguabot   23u  IPv4 0x1234      0t0  TCP 127.0.0.1:3000 (LISTEN)";
         let row = parse_listen_line(line).unwrap();
-        assert_eq!(row, PortRow {
-            port: 3000, proto: "TCP".into(), process: "node".into(),
-            pid: 8412, bind: "127.0.0.1".into(),
-        });
+        assert_eq!(
+            row,
+            PortRow {
+                port: 3000,
+                proto: "TCP".into(),
+                process: "node".into(),
+                pid: 8412,
+                bind: "127.0.0.1".into(),
+            }
+        );
     }
 
     #[test]
@@ -168,7 +394,10 @@ mod tests {
         let mut groups = parse_estab_output(out);
         groups.sort_by(|a, b| b.count.cmp(&a.count));
         assert_eq!(groups.len(), 2);
-        assert_eq!((groups[0].process.as_str(), groups[0].pid, groups[0].count), ("firefox", 700, 2));
+        assert_eq!(
+            (groups[0].process.as_str(), groups[0].pid, groups[0].count),
+            ("firefox", 700, 2)
+        );
         assert_eq!((groups[1].process.as_str(), groups[1].count), ("claude", 1));
     }
 }

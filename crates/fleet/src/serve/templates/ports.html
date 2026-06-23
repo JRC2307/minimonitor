@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}fleet · ports{% endblock %}
+{% block content %}
+<h1>listening ports</h1>
+<p class="meta">TCP only · latest snapshot per node</p>
+{% if rows.is_empty() %}
+<p class="empty">No host snapshots collected yet. Run <code>fleet collect</code>.</p>
+{% else %}
+<table class="ports">
+  <thead>
+    <tr><th>node</th><th>service</th><th>port</th><th>proto</th><th>process</th><th>pid</th><th>bind</th><th>collected</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr{% if r.stale %} class="stale"{% endif %}>
+      <td><a href="/node/{{ r.fleet_id }}">{{ r.hostname }}</a></td>
+      <td class="service">{{ r.service }}</td>
+      <td>{{ r.port }}</td>
+      <td>{{ r.proto }}</td>
+      <td class="muted"><code>{{ r.process }}</code></td>
+      <td class="muted">{{ r.pid }}</td>
+      <td><code>{{ r.bind }}</code></td>
+      <td>{{ r.collected_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

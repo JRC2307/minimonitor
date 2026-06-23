@@ -1,0 +1,21 @@
+# Port → friendly service name overrides for the fleet monitor.
+# Copy to ~/.config/fleet/service-labels.toml and edit.
+# Only needed for ports whose process command does NOT reveal a
+# projects/<type>/<name> path (docker-proxied ports, bare server.py, etc.).
+# Auto-derivation handles the rest — leave those out.
+
+[ports]
+3030  = "uptime-kuma"
+8090  = "beszel-hub"
+5432  = "paros-postgres"
+5433  = "dinara-fuzz-pg"
+21115 = "rustdesk-server"
+21116 = "rustdesk-server"
+21117 = "rustdesk-server"
+21118 = "rustdesk-server"
+21119 = "rustdesk-server"
+3011  = "iprep-playground"
+3012  = "crux-playground"
+3013  = "poker-helper"
+8790  = "callsheet"
+8800  = "autopilot"

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}fleet · inventory{% endblock %}
+{% block content %}
+<h1>inventory</h1>
+<p class="meta">{{ rows.len() }} nodes · derived online · <code>~</code> marks a fuzzy-merged row</p>
+{% include "inventory_table.html" %}
+{% endblock %}

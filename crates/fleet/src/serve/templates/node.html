@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}fleet · {{ hostname }}{% endblock %}
+{% block content %}
+<h1>{{ hostname }}</h1>
+<p class="meta"><a href="/">&larr; inventory</a></p>
+
+<dl class="detail">
+  <dt>fleet_id</dt><dd><code>{{ fleet_id }}</code></dd>
+  <dt>fqdn</dt><dd>{{ fqdn }}</dd>
+  <dt>os</dt><dd>{{ os }}</dd>
+  <dt>tier</dt><dd>{{ tier }}</dd>
+  <dt>online</dt><dd>{% if online %}<span class="up">● online</span>{% else %}<span class="down">○ offline</span>{% endif %}</dd>
+  <dt>dedupe key kind</dt><dd><span class="dedupe">{{ dedupe_key_kind }}</span></dd>
+  <dt>role</dt><dd>{{ role }}</dd>
+  <dt>owner</dt><dd>{{ owner }}</dd>
+  <dt>site</dt><dd>{{ site }}</dd>
+  <dt>gpu</dt><dd>{{ gpu }}</dd>
+  <dt>last seen</dt><dd>{{ last_seen }}</dd>
+</dl>
+
+<h2>addresses</h2>
+<ul class="addrs">
+  {% for a in addresses %}<li><code>{{ a }}</code></li>{% endfor %}
+</ul>
+
+<h2>seen in ({{ seen_in.len() }})</h2>
+<table class="seen-in">
+  <thead><tr><th>account</th><th>device_id</th></tr></thead>
+  <tbody>
+    {% for s in seen_in %}
+    <tr><td>{{ s.account }}</td><td><code>{{ s.device_id }}</code></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if !raw_tags.is_empty() %}
+<h2>raw tags</h2>
+<ul class="raw-tags">{% for t in raw_tags %}<li><code>{{ t }}</code></li>{% endfor %}</ul>
+{% endif %}
+
+{% match notes %}{% when Some with (n) %}<h2>notes</h2><p>{{ n }}</p>{% when None %}{% endmatch %}
+
+<h2>host snapshot</h2>
+{% match host_snapshot %}
+{% when None %}
+<p class="empty">No host snapshot collected yet. Run <code>fleet collect</code>.</p>
+{% when Some with (snap) %}
+<p class="meta">collected {{ snap.collected_at }}{% if snap.stale %} <span class="stale-badge">stale</span>{% endif %}</p>
+<dl class="detail">
+  <dt>cpu</dt><dd>{{ snap.cpu_pct }}</dd>
+  <dt>memory</dt><dd>{{ snap.mem_used }} / {{ snap.mem_total }}</dd>
+  {% match snap.gpu_pct %}{% when Some with (g) %}<dt>gpu</dt><dd>{{ g }}</dd>{% when None %}{% endmatch %}
+</dl>
+{% if !snap.ports.is_empty() %}
+<h3>listening ports ({{ snap.ports.len() }})</h3>
+<table class="ports">
+  <thead><tr><th>service</th><th>port</th><th>proto</th><th>process</th><th>pid</th><th>bind</th></tr></thead>
+  <tbody>
+    {% for p in snap.ports %}
+    <tr><td class="service">{{ p.service }}</td><td>{{ p.port }}</td><td>{{ p.proto }}</td><td class="muted"><code>{{ p.process }}</code></td><td class="muted">{{ p.pid }}</td><td><code>{{ p.bind }}</code></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if !snap.workloads.is_empty() %}
+<h3>AI workloads{% match snap.showing_top_n_note %}{% when Some with (note) %} <span class="note">({{ note }})</span>{% when None %}{% endmatch %}</h3>
+<table class="workloads">
+  <thead><tr><th>label</th><th>category</th><th>procs</th><th>cpu%</th><th>mem</th><th>example command</th></tr></thead>
+  <tbody>
+    {% for w in snap.workloads %}
+    <tr><td>{{ w.label }}</td><td>{{ w.category }}</td><td>{{ w.process_count }}</td><td>{{ w.cpu_pct }}</td><td>{{ w.mem_human }}</td><td><code>{{ w.example_command }}</code></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endmatch %}
+{% endblock %}

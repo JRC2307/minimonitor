@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sysinfo::{
     Disks, Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
 };
@@ -21,7 +21,7 @@ pub fn ewma_update(prev: Option<f32>, current: f32, alpha: f32) -> f32 {
 const MIN_VISIBLE_MEMORY_BYTES: u64 = 20 * 1024 * 1024;
 const LOCALHOST_REFRESH: Duration = Duration::from_secs(10);
 
-#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SortMode {
     Cpu,
@@ -39,7 +39,7 @@ impl SortMode {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ProcessRow {
     pub pid: u32,
     pub name: String,
@@ -54,13 +54,13 @@ pub struct ProcessRow {
     pub sustained_cpu: f32,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CoreUsage {
     pub index: usize,
     pub percent: f32,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DiskVolume {
     pub name: String,
     pub mount: String,
@@ -68,7 +68,7 @@ pub struct DiskVolume {
     pub available_bytes: u64,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MonitorSnapshot {
     pub total_memory_bytes: u64,
     pub used_memory_bytes: u64,
@@ -132,9 +132,7 @@ impl Sampler {
             last_localhost: Instant::now(),
             ports: crate::net::listening_ports(),
             connections: crate::net::established_connections(),
-            identity: crate::net::network_identity(
-                System::host_name().unwrap_or_default(),
-            ),
+            identity: crate::net::network_identity(System::host_name().unwrap_or_default()),
             disks: Disks::new_with_refreshed_list(),
             cpu_ewma: std::collections::HashMap::new(),
         }
@@ -153,9 +151,7 @@ impl Sampler {
             self.users.refresh();
             self.ports = crate::net::listening_ports();
             self.connections = crate::net::established_connections();
-            self.identity = crate::net::network_identity(
-                System::host_name().unwrap_or_default(),
-            );
+            self.identity = crate::net::network_identity(System::host_name().unwrap_or_default());
             self.disks.refresh(true);
             self.last_localhost = now;
         }
@@ -244,8 +240,7 @@ impl Sampler {
             })
             .collect();
 
-        let alive: std::collections::HashSet<u32> =
-            processes.iter().map(|p| p.pid).collect();
+        let alive: std::collections::HashSet<u32> = processes.iter().map(|p| p.pid).collect();
         self.cpu_ewma.retain(|pid, _| alive.contains(pid));
         for p in &processes {
             self.cpu_ewma.insert(p.pid, p.sustained_cpu);

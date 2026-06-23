@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AiWorkload {
     pub label: String,
     pub category: String,
@@ -14,7 +14,7 @@ pub struct AiWorkload {
     pub example_command: String,
 }
 
-#[derive(Clone, Serialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct AiSnapshot {
     pub workload_count: usize,
     pub total_cpu_percent: f32,

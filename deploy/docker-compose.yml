@@ -1,0 +1,47 @@
+# deploy/docker-compose.yml
+# Fleet observability stack — all images linux/amd64 (Intel mini host).
+# Ports bound to ${HOST_TS_IP} (tailnet CGNAT IP) only — never a wildcard.
+# Set HOST_TS_IP in deploy/.env before running (see .env.example).
+# Run `fleet doctor` preflight before `docker compose up`.
+
+name: fleet-observability
+
+services:
+  beszel:
+    image: henrygd/beszel:0.9.1               # PIN (linux/amd64); re-record fixtures on bump
+    restart: unless-stopped
+    ports: ["${HOST_TS_IP}:8090:8090"]        # tailnet CGNAT IP only
+    volumes: ["./beszel_data:/beszel_data"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.16       # PIN to 1.23.x (NOT 2.0), linux/amd64
+    restart: unless-stopped
+    cap_add: ["NET_RAW"]                       # required: Kuma's ICMP 'ping' monitor needs it
+    ports: ["${HOST_TS_IP}:3001:3001"]
+    volumes: ["./kuma_data:/app/data"]
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0          # PIN (linux/amd64)
+    restart: unless-stopped
+    command: serve
+    ports: ["${HOST_TS_IP}:8082:80"]           # tailnet-only; phone must be on tailnet
+    environment:
+      NTFY_BASE_URL: "http://${HOST_TS_IP}:8082"
+      NTFY_AUTH_FILE: /var/lib/ntfy/user.db
+      NTFY_AUTH_DEFAULT_ACCESS: deny-all        # private: nothing readable without a token
+    volumes: ["./ntfy:/var/lib/ntfy"]
+
+  cloudflared:                                  # remote access to fleet serve — no public port
+    image: cloudflare/cloudflared:2024.12.2     # PIN (linux/amd64)
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${FLEET_CF_TUNNEL_TOKEN}    # named tunnel; fronts fleet.<domain> via Cloudflare Access
+    # connects OUTBOUND to Cloudflare and proxies to fleet serve on ${HOST_TS_IP}:8099
+    # ingress (fleet.<domain> -> http://${HOST_TS_IP}:8099) + Access policy configured in CF dashboard
+    env_file: [".env"]

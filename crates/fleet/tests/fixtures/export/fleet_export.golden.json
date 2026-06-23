@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-01-01T00:00:00Z",
+  "nodes": [
+    {
+      "id": "mk:abc123",
+      "hostname": "nas-01",
+      "tier": "agent",
+      "online": 1,
+      "site": "local",
+      "role": "nas",
+      "owner": "self",
+      "last_seen": "2026-01-01T00:00:00Z"
+    }
+  ]
+}

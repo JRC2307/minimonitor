@@ -1,0 +1,4 @@
+# askama template root (spec §3.1). Templates live next to the serve handlers
+# rather than the default `$CRATE/templates` dir.
+[general]
+dirs = ["src/serve/templates"]

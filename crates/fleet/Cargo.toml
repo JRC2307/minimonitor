@@ -27,7 +27,6 @@ tower-http = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
-ipnet = { workspace = true }
 regex = { workspace = true }
 trippy-core = "=0.13.0"
 socket2 = "0.5"          # probe.rs self-check: open the unprivileged dgram-ICMP socket

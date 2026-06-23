@@ -1,18 +1,29 @@
 use anyhow::{Context, bail};
 use minimonitor_core::snapshot::MonitorSnapshot;
-use std::time::Duration;
 
 pub struct AgentClient {
     http: reqwest::Client,
 }
 
+impl Default for AgentClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AgentClient {
-    pub fn new(per_host_timeout: Duration) -> Self {
+    /// Build an `AgentClient` with **no** reqwest-level timeout.
+    ///
+    /// Per spec §4.4 ("one bound, one error path"), the single per-host
+    /// wall-clock bound is the `tokio::time::timeout` wrapper applied by
+    /// `commands/collect.rs`.  Setting a second timeout here would produce two
+    /// competing bounds and two distinct error arms (reqwest `TimedOut` vs
+    /// `tokio::time::error::Elapsed`), which complicates error reporting and
+    /// retry logic.  The tokio wrapper cancels the entire fetch future, so no
+    /// connection or body read can outlive the configured `per_host_timeout_ms`.
+    pub fn new() -> Self {
         Self {
-            http: reqwest::Client::builder()
-                .timeout(per_host_timeout)
-                .build()
-                .unwrap(),
+            http: reqwest::Client::builder().build().unwrap(),
         }
     }
 

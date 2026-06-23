@@ -53,6 +53,80 @@ pub struct InventoryTable {
     pub rows: Vec<InventoryRow>,
 }
 
+// ── Host snapshot section (on /node/{id}) ────────────────────────────────────
+
+pub struct HostPortRow {
+    pub port: u16,
+    pub proto: String,
+    pub process: String,
+    pub pid: i64,
+    pub bind: String,
+}
+
+pub struct HostWorkloadRow {
+    pub label: String,
+    pub category: String,
+    pub process_count: i64,
+    pub cpu_pct: String,   // pre-formatted "42.1%"
+    pub mem_human: String, // pre-formatted "1.2 GB"
+    pub example_command: String,
+}
+
+pub struct HostSnapshotView {
+    pub collected_at: String,
+    pub stale: bool,
+    pub cpu_pct: String,         // pre-formatted "42.1%"
+    pub mem_used: String,        // pre-formatted "1.2 GB"
+    pub mem_total: String,       // pre-formatted "8.0 GB"
+    pub gpu_pct: Option<String>, // pre-formatted "35.0%" or None
+    pub ports: Vec<HostPortRow>,
+    pub workloads: Vec<HostWorkloadRow>,
+    pub workload_count: i64, // true total (may exceed workloads.len())
+    pub showing_top_n_note: Option<String>,
+}
+
+// ── /ports page ───────────────────────────────────────────────────────────────
+
+pub struct FleetPortViewRow {
+    pub fleet_id: String,
+    pub hostname: String,
+    pub port: u16,
+    pub proto: String,
+    pub process: String,
+    pub pid: i64,
+    pub bind: String,
+    pub collected_at: String,
+    pub stale: bool,
+}
+
+#[derive(Template)]
+#[template(path = "ports.html")]
+pub struct PortsPage {
+    pub rows: Vec<FleetPortViewRow>,
+}
+
+// ── /workloads page ───────────────────────────────────────────────────────────
+
+pub struct FleetWorkloadViewRow {
+    pub fleet_id: String,
+    pub hostname: String,
+    pub label: String,
+    pub category: String,
+    pub process_count: i64,
+    pub cpu_pct: String,         // pre-formatted
+    pub mem_human: String,       // pre-formatted
+    pub example_command: String, // already truncated to ~80 chars
+    pub collected_at: String,
+    pub stale: bool,
+    pub showing_top_n_note: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "workloads.html")]
+pub struct WorkloadsPage {
+    pub rows: Vec<FleetWorkloadViewRow>,
+}
+
 // ── Node detail (`/node/{id}`, mirrors `fleet show`) ─────────────────────────
 
 pub struct SeenInRow {
@@ -79,6 +153,7 @@ pub struct NodePage {
     pub seen_in: Vec<SeenInRow>,
     pub raw_tags: Vec<String>,
     pub notes: Option<String>,
+    pub host_snapshot: Option<HostSnapshotView>,
 }
 
 // ── Paths (`/paths`, MTR path health) ────────────────────────────────────────

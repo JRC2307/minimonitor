@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}fleet · workloads{% endblock %}
+{% block content %}
+<h1>AI workloads</h1>
+<p class="meta">latest snapshot per node · ordered by CPU%</p>
+{% if rows.is_empty() %}
+<p class="empty">No host snapshots collected yet. Run <code>fleet collect</code>.</p>
+{% else %}
+<table class="workloads">
+  <thead>
+    <tr><th>node</th><th>label</th><th>category</th><th>procs</th><th>cpu%</th><th>mem</th><th>example command</th><th>collected</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr{% if r.stale %} class="stale"{% endif %}>
+      <td><a href="/node/{{ r.fleet_id }}">{{ r.hostname }}</a></td>
+      <td>{{ r.label }}</td>
+      <td>{{ r.category }}</td>
+      <td>{{ r.process_count }}</td>
+      <td>{{ r.cpu_pct }}</td>
+      <td>{{ r.mem_human }}</td>
+      <td><code>{{ r.example_command }}</code></td>
+      <td>{{ r.collected_at }}{% match r.showing_top_n_note %}{% when Some with (note) %} <span class="note">({{ note }})</span>{% when None %}{% endmatch %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

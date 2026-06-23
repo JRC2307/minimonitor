@@ -1,4 +1,5 @@
 pub mod cf;
+pub mod host;
 pub mod nodes;
 pub mod probe;
 
@@ -93,6 +94,62 @@ CREATE TABLE cf_zone (
 /// tailnet) — it is kept, not deleted, so its history/enrollments survive.
 const M002: &str = "ALTER TABLE node ADD COLUMN stale INTEGER NOT NULL DEFAULT 0;";
 
+/// M003: host-snapshot hybrid storage — full-fidelity SCRUBBED blob parent +
+/// extracted indexed child tables for fleet-wide port/workload aggregates.
+const M003: &str = "
+CREATE TABLE host_snapshot (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id            TEXT    NOT NULL REFERENCES node(fleet_id) ON DELETE CASCADE,
+    collected_at       TEXT    NOT NULL,
+    hostname           TEXT    NOT NULL DEFAULT '',
+    tailnet_ip         TEXT,
+    boot_epoch         INTEGER NOT NULL DEFAULT 0,
+    uptime_secs        INTEGER NOT NULL DEFAULT 0,
+    total_cpu_percent  REAL    NOT NULL DEFAULT 0,
+    used_memory_bytes  INTEGER NOT NULL DEFAULT 0,
+    total_memory_bytes INTEGER NOT NULL DEFAULT 0,
+    gpu_percent        REAL,
+    workload_count     INTEGER NOT NULL DEFAULT 0,
+    port_count         INTEGER NOT NULL DEFAULT 0,
+    snapshot_json      TEXT    NOT NULL
+);
+CREATE INDEX idx_hs_node ON host_snapshot(node_id, collected_at);
+
+CREATE TABLE host_port (
+    snapshot_id INTEGER NOT NULL REFERENCES host_snapshot(id) ON DELETE CASCADE,
+    node_id     TEXT    NOT NULL,
+    port        INTEGER NOT NULL,
+    proto       TEXT    NOT NULL,
+    process     TEXT    NOT NULL,
+    pid         INTEGER NOT NULL,
+    bind        TEXT    NOT NULL
+);
+CREATE INDEX idx_hp_snap ON host_port(snapshot_id);
+CREATE INDEX idx_hp_node ON host_port(node_id);
+CREATE INDEX idx_hp_port ON host_port(port);
+
+CREATE TABLE host_workload (
+    snapshot_id        INTEGER NOT NULL REFERENCES host_snapshot(id) ON DELETE CASCADE,
+    node_id            TEXT    NOT NULL,
+    label              TEXT    NOT NULL,
+    category           TEXT    NOT NULL,
+    process_count      INTEGER NOT NULL,
+    total_cpu_percent  REAL    NOT NULL,
+    total_memory_bytes INTEGER NOT NULL,
+    example_command    TEXT    NOT NULL
+);
+CREATE INDEX idx_hw_snap ON host_workload(snapshot_id);
+CREATE INDEX idx_hw_node ON host_workload(node_id);
+CREATE INDEX idx_hw_cat  ON host_workload(category);
+
+CREATE TABLE host_collect_status (
+    node_id         TEXT PRIMARY KEY REFERENCES node(fleet_id) ON DELETE CASCADE,
+    last_attempt_at TEXT NOT NULL,
+    last_success_at TEXT,
+    last_error      TEXT
+);
+";
+
 pub fn open(path: &std::path::Path) -> anyhow::Result<Connection> {
     let mut conn =
         Connection::open(path).with_context(|| format!("opening sqlite at {}", path.display()))?;
@@ -100,7 +157,7 @@ pub fn open(path: &std::path::Path) -> anyhow::Result<Connection> {
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
         .context("setting PRAGMAs")?;
 
-    let migrations = Migrations::new(vec![M::up(M001), M::up(M002)]);
+    let migrations = Migrations::new(vec![M::up(M001), M::up(M002), M::up(M003)]);
     migrations
         .to_latest(&mut conn)
         .context("running migrations")?;
@@ -152,9 +209,9 @@ mod tests {
         let ver: i32 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(ver, 2, "user_version should be 2 after M001+M002");
+        assert_eq!(ver, 3, "user_version should be 3 after M001+M002+M003");
 
-        // Check all 7 tables exist
+        // Check all 11 tables exist (7 from M001 + stale from M002 + 4 from M003)
         let expected = [
             "node",
             "node_seen",
@@ -163,6 +220,10 @@ mod tests {
             "probe_run",
             "probe_hop",
             "cf_zone",
+            "host_snapshot",
+            "host_port",
+            "host_workload",
+            "host_collect_status",
         ];
         for table in &expected {
             let count: i32 = conn

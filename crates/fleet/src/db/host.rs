@@ -7,6 +7,8 @@
 //! to select only each node's newest snapshot — never GROUP BY node_id directly,
 //! which would collapse multiple ports per node.
 
+use std::collections::HashMap;
+
 use anyhow::Context;
 use minimonitor_core::snapshot::MonitorSnapshot;
 use rusqlite::Connection;
@@ -437,4 +439,181 @@ pub fn workloads_for_node(
 
     rows.map(|r| r.context("map workloads_for_node row"))
         .collect::<anyhow::Result<Vec<_>>>()
+}
+
+// ─── pid → command helpers ────────────────────────────────────────────────────
+
+/// Parse the `processes` array of a snapshot JSON blob into a `pid → command`
+/// map. Entries missing a numeric `pid` or a non-empty string `command` are
+/// skipped. A blob with no `processes` key yields an empty map (never an error).
+fn pid_commands_from_blob(snapshot_json: &str) -> HashMap<i64, String> {
+    let mut out = HashMap::new();
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(snapshot_json) else {
+        return out;
+    };
+    let Some(procs) = v.get("processes").and_then(|p| p.as_array()) else {
+        return out;
+    };
+    for p in procs {
+        let (Some(pid), Some(cmd)) = (
+            p.get("pid").and_then(|x| x.as_i64()),
+            p.get("command").and_then(|x| x.as_str()),
+        ) else {
+            continue;
+        };
+        if cmd.is_empty() {
+            continue;
+        }
+        out.insert(pid, cmd.to_owned());
+    }
+    out
+}
+
+/// For each node's newest snapshot, return `node_id → (pid → command)`.
+/// Used by `/ports` to resolve a friendly service name per port.
+pub fn commands_by_pid_all(
+    conn: &Connection,
+) -> anyhow::Result<HashMap<String, HashMap<i64, String>>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT node_id, snapshot_json
+             FROM host_snapshot
+             WHERE id IN (SELECT MAX(id) FROM host_snapshot GROUP BY node_id)",
+        )
+        .context("prepare commands_by_pid_all")?;
+
+    let rows = stmt
+        .query_map([], |r| {
+            let node_id: String = r.get(0)?;
+            let blob: String = r.get(1)?;
+            Ok((node_id, blob))
+        })
+        .context("query commands_by_pid_all")?;
+
+    let mut out: HashMap<String, HashMap<i64, String>> = HashMap::new();
+    for row in rows {
+        let (node_id, blob) = row.context("map commands_by_pid_all row")?;
+        out.insert(node_id, pid_commands_from_blob(&blob));
+    }
+    Ok(out)
+}
+
+/// `pid → command` for `node_id`'s newest snapshot (empty map if none).
+pub fn commands_by_pid_for_node(
+    conn: &Connection,
+    node_id: &str,
+) -> anyhow::Result<HashMap<i64, String>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT snapshot_json
+             FROM host_snapshot
+             WHERE node_id = ?1
+             ORDER BY id DESC
+             LIMIT 1",
+        )
+        .context("prepare commands_by_pid_for_node")?;
+
+    let mut rows = stmt
+        .query_map(rusqlite::params![node_id], |r| r.get::<_, String>(0))
+        .context("query commands_by_pid_for_node")?;
+
+    match rows.next() {
+        Some(blob) => Ok(pid_commands_from_blob(&blob.context("map row")?)),
+        None => Ok(HashMap::new()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Seed a minimal `node` row so FK on `host_snapshot.node_id` passes.
+    fn seed_node(conn: &Connection, fleet_id: &str) {
+        conn.execute(
+            "INSERT INTO node (fleet_id, hostname, last_seen, first_seen, updated_at)
+             VALUES (?1, 'h', '2026-06-22T00:00:00+00:00',
+                     '2026-06-22T00:00:00+00:00', '2026-06-22T00:00:00+00:00')",
+            rusqlite::params![fleet_id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn commands_by_pid_all_parses_processes_blob() {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let conn = crate::db::open(f.path()).unwrap();
+        seed_node(&conn, "n1");
+        let blob = r#"{"processes":[
+            {"pid":100,"command":"/Users/x/Desktop/1/projects/experiments/cuentas/.venv/bin/python app"},
+            {"pid":200,"command":"opencode web --port 4096"}
+        ]}"#;
+        conn.execute(
+            "INSERT INTO host_snapshot
+                (node_id, collected_at, hostname, total_cpu_percent, used_memory_bytes,
+                 total_memory_bytes, workload_count, port_count, snapshot_json)
+             VALUES ('n1', '2026-06-22T00:00:00+00:00', 'h', 0.0, 0, 0, 0, 2, ?1)",
+            rusqlite::params![blob],
+        )
+        .unwrap();
+
+        let map = commands_by_pid_all(&conn).unwrap();
+        let n1 = map.get("n1").expect("node n1 present");
+        assert_eq!(
+            n1.get(&100).map(String::as_str),
+            Some("/Users/x/Desktop/1/projects/experiments/cuentas/.venv/bin/python app")
+        );
+        assert_eq!(
+            n1.get(&200).map(String::as_str),
+            Some("opencode web --port 4096")
+        );
+    }
+
+    #[test]
+    fn commands_by_pid_all_empty_blob_yields_empty_inner_map() {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let conn = crate::db::open(f.path()).unwrap();
+        seed_node(&conn, "n2");
+        conn.execute(
+            "INSERT INTO host_snapshot
+                (node_id, collected_at, hostname, total_cpu_percent, used_memory_bytes,
+                 total_memory_bytes, workload_count, port_count, snapshot_json)
+             VALUES ('n2', '2026-06-22T00:00:00+00:00', 'h', 0.0, 0, 0, 0, 0, '{}')",
+            [],
+        )
+        .unwrap();
+
+        let map = commands_by_pid_all(&conn).unwrap();
+        // node present with an empty inner map (no processes key) — must not error.
+        assert!(map.get("n2").map(|m| m.is_empty()).unwrap_or(true));
+    }
+
+    #[test]
+    fn commands_by_pid_for_node_uses_newest_snapshot() {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let conn = crate::db::open(f.path()).unwrap();
+        seed_node(&conn, "n3");
+        // Older snapshot: pid 1 → "old".
+        conn.execute(
+            "INSERT INTO host_snapshot
+                (node_id, collected_at, hostname, total_cpu_percent, used_memory_bytes,
+                 total_memory_bytes, workload_count, port_count, snapshot_json)
+             VALUES ('n3', '2026-06-22T00:00:00+00:00', 'h', 0.0, 0, 0, 0, 0,
+                     '{\"processes\":[{\"pid\":1,\"command\":\"old\"}]}')",
+            [],
+        )
+        .unwrap();
+        // Newer snapshot (higher id): pid 1 → "new".
+        conn.execute(
+            "INSERT INTO host_snapshot
+                (node_id, collected_at, hostname, total_cpu_percent, used_memory_bytes,
+                 total_memory_bytes, workload_count, port_count, snapshot_json)
+             VALUES ('n3', '2026-06-22T01:00:00+00:00', 'h', 0.0, 0, 0, 0, 0,
+                     '{\"processes\":[{\"pid\":1,\"command\":\"new\"}]}')",
+            [],
+        )
+        .unwrap();
+
+        let map = commands_by_pid_for_node(&conn, "n3").unwrap();
+        assert_eq!(map.get(&1).map(String::as_str), Some("new"));
+    }
 }

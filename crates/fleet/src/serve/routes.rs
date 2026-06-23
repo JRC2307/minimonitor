@@ -475,6 +475,48 @@ pub async fn get_workloads_html(State(state): State<AppState>) -> Response {
     templates::render(&page)
 }
 
+// ── GET /api/ports ────────────────────────────────────────────────────────────
+
+pub async fn get_api_ports(State(state): State<AppState>) -> impl IntoResponse {
+    let conn = match ro_conn(&state) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+    match db::host::all_ports(&conn) {
+        Ok(rows) => Json(export::build_ports_json(
+            &rows,
+            state.snapshot_stale_threshold,
+        ))
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db query failed: {e:#}"),
+        )
+            .into_response(),
+    }
+}
+
+// ── GET /api/workloads ────────────────────────────────────────────────────────
+
+pub async fn get_api_workloads(State(state): State<AppState>) -> impl IntoResponse {
+    let conn = match ro_conn(&state) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+    match db::host::all_workloads(&conn) {
+        Ok(rows) => Json(export::build_workloads_json(
+            &rows,
+            state.snapshot_stale_threshold,
+        ))
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db query failed: {e:#}"),
+        )
+            .into_response(),
+    }
+}
+
 // ── GET /observability (CF zones + links-out + online rollup) ────────────────
 
 pub async fn get_observability_html(State(state): State<AppState>) -> Response {

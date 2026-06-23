@@ -223,11 +223,19 @@ fn run_doctor(compose_path: &std::path::Path, config_path: &std::path::Path) -> 
         compose_path.display()
     );
 
+    let mut errors: Vec<String> = Vec::new();
+
+    // ── 1. Compose bind-address check ────────────────────────────────────────
     if compose_path.exists() {
         let yaml = std::fs::read_to_string(compose_path)
             .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", compose_path.display()))?;
-        fleet::doctor::check_compose_binds(&yaml)?;
-        eprintln!("fleet doctor: compose bind-address check PASSED");
+        match fleet::doctor::check_compose_binds(&yaml) {
+            Ok(()) => eprintln!("fleet doctor: compose bind-address check PASSED"),
+            Err(e) => {
+                eprintln!("fleet doctor: ERROR compose bind: {e}");
+                errors.push(e.to_string());
+            }
+        }
     } else {
         eprintln!(
             "fleet doctor: {} not found, skipping compose bind check",
@@ -235,15 +243,128 @@ fn run_doctor(compose_path: &std::path::Path, config_path: &std::path::Path) -> 
         );
     }
 
-    // R-5 (spec §3.8): also validate the native `fleet serve` bind (:8099).
-    if config_path.exists() {
-        let cfg = fleet::config::load_config(config_path)?;
-        if let Some(serve) = cfg.serve.as_ref() {
-            fleet::doctor::check_serve_bind(&serve.bind)?;
-            eprintln!("fleet doctor: serve bind-address check PASSED");
+    // Load config (best-effort; some checks below require it).
+    let cfg_opt = if config_path.exists() {
+        match fleet::config::load_config(config_path) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("fleet doctor: WARN could not load config: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // ── 2. `fleet serve` bind check (R-5, spec §3.8) ─────────────────────────
+    if let Some(cfg) = cfg_opt.as_ref()
+        && let Some(serve) = cfg.serve.as_ref()
+    {
+        match fleet::doctor::check_serve_bind(&serve.bind) {
+            Ok(()) => eprintln!("fleet doctor: serve bind-address check PASSED"),
+            Err(e) => {
+                eprintln!("fleet doctor: ERROR serve.bind: {e}");
+                errors.push(e.to_string());
+            }
         }
     }
 
-    eprintln!("fleet doctor: all checks passed");
-    Ok(())
+    // ── 3. Agent live-bind check (spec §3.4) ─────────────────────────────────
+    // Scan the local host's listening ports for :9909 bound to a non-safe address.
+    match fleet::doctor::check_agent_live_bind() {
+        Ok(()) => eprintln!("fleet doctor: agent live bind check PASSED"),
+        Err(e) => {
+            eprintln!("fleet doctor: ERROR agent live bind: {e}");
+            errors.push(e.to_string());
+        }
+    }
+
+    // ── 4. Token resolvability + untokened-tailnet check (spec §3.4) ─────────
+    if let Some(cfg) = cfg_opt.as_ref() {
+        let token_env = cfg.collect.token_env.as_deref();
+        if let Some(env_var) = token_env {
+            // WARN if the configured token env var cannot be resolved.
+            let unresolved = fleet::doctor::check_secret_resolvability(
+                &[(env_var, env_var)],
+                fleet::secrets::keychain_absent_fn,
+            );
+            if !unresolved.is_empty() {
+                eprintln!(
+                    "fleet doctor: WARN token env var `{env_var}` is not set or unresolvable \
+                     (set it before running `fleet collect`)"
+                );
+            } else {
+                eprintln!("fleet doctor: token env var `{env_var}` resolves OK");
+            }
+        } else {
+            // No token configured — check whether a tailnet-bound agent is running.
+            // A locally-detected tailnet-bound agent with no token is an ERROR (spec §3.3 / §3.4).
+            use minimonitor_core::net::{is_cgnat, listening_ports};
+            let has_tailnet_agent = listening_ports()
+                .into_iter()
+                .filter(|r| r.port == 9909)
+                .any(|r| {
+                    // Tailnet bind = CGNAT address (100.64.0.0/10, RFC 6598).
+                    let addr = r.bind.trim_start_matches('[').trim_end_matches(']');
+                    addr.parse::<std::net::Ipv4Addr>()
+                        .map(is_cgnat)
+                        .unwrap_or(false)
+                });
+            if has_tailnet_agent {
+                let msg = "tailnet-bound agent detected on :9909 with no [collect].token_env \
+                           configured — untokened tailnet agent is a security ERROR";
+                eprintln!("fleet doctor: ERROR {msg}");
+                errors.push(msg.to_owned());
+            }
+        }
+    }
+
+    // ── 5. DB: list nodes with open last_error (read-only; skip if no DB) ────
+    if let Some(cfg) = cfg_opt.as_ref() {
+        let db_path = std::path::PathBuf::from(&cfg.db_path);
+        if db_path.exists() {
+            match fleet::db::open(&db_path) {
+                Err(e) => {
+                    eprintln!("fleet doctor: WARN cannot open DB for status check: {e}");
+                }
+                Ok(conn) => {
+                    let mut stmt = conn
+                        .prepare(
+                            "SELECT node_id, last_error FROM host_collect_status \
+                             WHERE last_error IS NOT NULL",
+                        )
+                        .unwrap_or_else(|_| unreachable!("static SQL is valid"));
+                    let rows: Vec<(String, String)> = stmt
+                        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                        .map(|iter| iter.filter_map(|r| r.ok()).collect())
+                        .unwrap_or_default();
+                    if rows.is_empty() {
+                        eprintln!("fleet doctor: no nodes with collect errors in DB");
+                    } else {
+                        for (node_id, err) in &rows {
+                            eprintln!(
+                                "fleet doctor: WARN node `{node_id}` has collect error: {err}"
+                            );
+                        }
+                    }
+                }
+            }
+        } else {
+            eprintln!(
+                "fleet doctor: no DB found at {}, skipping node error check",
+                db_path.display()
+            );
+        }
+    }
+
+    if errors.is_empty() {
+        eprintln!("fleet doctor: all checks passed");
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "fleet doctor: {} error(s) found:\n{}",
+            errors.len(),
+            errors.join("\n")
+        )
+    }
 }

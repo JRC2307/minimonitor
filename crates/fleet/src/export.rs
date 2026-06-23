@@ -11,12 +11,20 @@
 //! [`build_path_health_json`] are the single source of truth for the JSON shapes
 //! consumed by both the CLI `--json` output and `fleet serve`'s `/api/*` endpoints
 //! (Task 16). These structs are **public** so `serve` reuses them directly.
+//!
+//! [`build_ports_json`] / [`build_ports_json_at`] and
+//! [`build_workloads_json`] / [`build_workloads_json_at`] are the schema-locked
+//! builders for `/api/ports` and `/api/workloads` (spec §6.4 / C9). Per-row
+//! `stale: bool` is computed via `model::is_stale`. Port numbers are `u16`
+//! (a JSON number) and `stale` is a boolean — both are golden-locked by tests.
 
-use crate::model::{DedupeKind, Node, Tier};
+use crate::db::host::{FleetPortRow, FleetWorkloadRow};
+use crate::model::{DedupeKind, Node, Tier, is_stale};
 use anyhow::Context;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::time::Duration;
 
 /// The stable, exported projection of a [`Node`]. Volatile fields
 /// (`last_seen`, `online`, `updated_at`) are intentionally omitted; `notes`,
@@ -196,6 +204,136 @@ pub fn build_path_health_json(hops: &[serde_json::Value]) -> PathHealthExport {
     }
 }
 
+// ── Ports JSON export (spec §6.4 / C9) ──────────────────────────────────────
+
+/// Top-level response body for `GET /api/ports`. Schema-locked — a field rename
+/// or type change breaks the golden test.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortsExport {
+    pub generated_at: String,
+    pub rows: Vec<PortRowExport>,
+}
+
+/// Per-row projection for `/api/ports`. Field names, types, and ordering are
+/// schema-locked: `port` is `u16` (JSON number), `stale` is `bool` (JSON boolean).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortRowExport {
+    pub hostname: String,
+    pub fleet_id: String,
+    /// Port number as a JSON **number** (u16). A rename or type change breaks
+    /// the schema-lock golden test.
+    pub port: u16,
+    pub proto: String,
+    pub process: String,
+    pub pid: i64,
+    pub bind: String,
+    pub collected_at: String,
+    /// `true` when the snapshot is older than the stale threshold.
+    /// JSON **boolean** — not a string. Schema-locked.
+    pub stale: bool,
+}
+
+/// Build the ports JSON export, stamping `generated_at` with [`Utc::now()`].
+pub fn build_ports_json(rows: &[FleetPortRow], stale_threshold: Duration) -> PortsExport {
+    build_ports_json_at(
+        rows,
+        Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        stale_threshold,
+    )
+}
+
+/// Build the ports JSON export with a **caller-supplied** `generated_at` string.
+/// Use this variant in tests to produce deterministic output.
+pub fn build_ports_json_at(
+    rows: &[FleetPortRow],
+    generated_at: String,
+    stale_threshold: Duration,
+) -> PortsExport {
+    PortsExport {
+        generated_at,
+        rows: rows
+            .iter()
+            .map(|r| PortRowExport {
+                hostname: r.hostname.clone(),
+                fleet_id: r.node_id.clone(),
+                port: r.port,
+                proto: r.proto.clone(),
+                process: r.process.clone(),
+                pid: r.pid,
+                bind: r.bind.clone(),
+                collected_at: r.collected_at.clone(),
+                stale: is_stale(&r.collected_at, stale_threshold),
+            })
+            .collect(),
+    }
+}
+
+// ── Workloads JSON export (spec §6.4 / C9) ───────────────────────────────────
+
+/// Top-level response body for `GET /api/workloads`. Schema-locked.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkloadsExport {
+    pub generated_at: String,
+    pub rows: Vec<WorkloadRowExport>,
+}
+
+/// Per-row projection for `/api/workloads`. Field names and types are
+/// schema-locked: `stale` is `bool` (JSON boolean).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkloadRowExport {
+    pub hostname: String,
+    pub fleet_id: String,
+    pub label: String,
+    pub category: String,
+    pub process_count: i64,
+    pub total_cpu_percent: f64,
+    pub total_memory_bytes: i64,
+    pub example_command: String,
+    pub collected_at: String,
+    /// `true` when the snapshot is older than the stale threshold.
+    /// JSON **boolean** — not a string. Schema-locked.
+    pub stale: bool,
+}
+
+/// Build the workloads JSON export, stamping `generated_at` with [`Utc::now()`].
+pub fn build_workloads_json(
+    rows: &[FleetWorkloadRow],
+    stale_threshold: Duration,
+) -> WorkloadsExport {
+    build_workloads_json_at(
+        rows,
+        Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        stale_threshold,
+    )
+}
+
+/// Build the workloads JSON export with a **caller-supplied** `generated_at` string.
+/// Use this variant in tests to produce deterministic output.
+pub fn build_workloads_json_at(
+    rows: &[FleetWorkloadRow],
+    generated_at: String,
+    stale_threshold: Duration,
+) -> WorkloadsExport {
+    WorkloadsExport {
+        generated_at,
+        rows: rows
+            .iter()
+            .map(|r| WorkloadRowExport {
+                hostname: r.hostname.clone(),
+                fleet_id: r.node_id.clone(),
+                label: r.label.clone(),
+                category: r.category.clone(),
+                process_count: r.process_count,
+                total_cpu_percent: r.total_cpu_percent,
+                total_memory_bytes: r.total_memory_bytes,
+                example_command: r.example_command.clone(),
+                collected_at: r.collected_at.clone(),
+                stale: is_stale(&r.collected_at, stale_threshold),
+            })
+            .collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +400,196 @@ mod tests {
         let a = yaml.find("alpha").unwrap();
         let z = yaml.find("zeta").unwrap();
         assert!(a < z, "alpha must precede zeta");
+    }
+
+    // ── C9 export builder tests ──────────────────────────────────────────────
+
+    fn fresh_port_row() -> crate::db::host::FleetPortRow {
+        crate::db::host::FleetPortRow {
+            node_id: "fleet-01".to_owned(),
+            hostname: "host-a".to_owned(),
+            collected_at: (Utc::now() - Duration::minutes(1)).to_rfc3339(),
+            port: 8080,
+            proto: "TCP".to_owned(),
+            process: "nginx".to_owned(),
+            pid: 1234,
+            bind: "0.0.0.0".to_owned(),
+        }
+    }
+
+    fn stale_port_row() -> crate::db::host::FleetPortRow {
+        crate::db::host::FleetPortRow {
+            node_id: "fleet-02".to_owned(),
+            hostname: "host-b".to_owned(),
+            collected_at: (Utc::now() - Duration::hours(4)).to_rfc3339(),
+            port: 443,
+            proto: "TCP".to_owned(),
+            process: "caddy".to_owned(),
+            pid: 5678,
+            bind: "127.0.0.1".to_owned(),
+        }
+    }
+
+    fn fresh_workload_row() -> crate::db::host::FleetWorkloadRow {
+        crate::db::host::FleetWorkloadRow {
+            node_id: "fleet-01".to_owned(),
+            hostname: "host-a".to_owned(),
+            collected_at: (Utc::now() - Duration::minutes(1)).to_rfc3339(),
+            label: "llama.cpp".to_owned(),
+            category: "inference".to_owned(),
+            process_count: 2,
+            total_cpu_percent: 42.5,
+            total_memory_bytes: 4_000_000_000,
+            example_command: "/usr/bin/llama-run model.gguf".to_owned(),
+            workload_count: 2,
+        }
+    }
+
+    fn stale_workload_row() -> crate::db::host::FleetWorkloadRow {
+        crate::db::host::FleetWorkloadRow {
+            node_id: "fleet-02".to_owned(),
+            hostname: "host-b".to_owned(),
+            collected_at: (Utc::now() - Duration::hours(4)).to_rfc3339(),
+            label: "ollama".to_owned(),
+            category: "llm".to_owned(),
+            process_count: 1,
+            total_cpu_percent: 10.0,
+            total_memory_bytes: 2_000_000_000,
+            example_command: "/usr/bin/ollama serve".to_owned(),
+            workload_count: 1,
+        }
+    }
+
+    const THREE_HOURS: std::time::Duration = std::time::Duration::from_secs(3 * 3600);
+
+    /// build_ports_json_at produces deterministic output and correct stale flags
+    #[test]
+    fn build_ports_json_at_stale_flag() {
+        let rows = vec![fresh_port_row(), stale_port_row()];
+        let export = build_ports_json_at(
+            rows.as_slice(),
+            "2026-06-22T00:00:00Z".to_owned(),
+            THREE_HOURS,
+        );
+        assert_eq!(export.generated_at, "2026-06-22T00:00:00Z");
+        assert_eq!(export.rows.len(), 2);
+        assert!(!export.rows[0].stale, "fresh row must not be stale");
+        assert!(export.rows[1].stale, "4h-old row must be stale");
+    }
+
+    /// port is a u16 (number) and stale is a bool — schema-lock type check
+    #[test]
+    fn build_ports_json_at_port_is_number_stale_is_bool() {
+        let rows = vec![fresh_port_row()];
+        let export = build_ports_json_at(
+            rows.as_slice(),
+            "2026-06-22T00:00:00Z".to_owned(),
+            THREE_HOURS,
+        );
+        let json = serde_json::to_value(&export).unwrap();
+        let row = &json["rows"][0];
+        assert!(
+            row["port"].is_number(),
+            "port must be a JSON number, got: {}",
+            row["port"]
+        );
+        assert!(
+            row["stale"].is_boolean(),
+            "stale must be a JSON boolean, got: {}",
+            row["stale"]
+        );
+        assert_eq!(row["port"].as_u64(), Some(8080), "port value mismatch");
+    }
+
+    /// build_ports_json_at field names are locked — rename breaks this test
+    #[test]
+    fn build_ports_json_at_golden_key_paths() {
+        let rows = vec![fresh_port_row()];
+        let export = build_ports_json_at(
+            rows.as_slice(),
+            "2026-06-22T00:00:00Z".to_owned(),
+            THREE_HOURS,
+        );
+        let json = serde_json::to_value(&export).unwrap();
+        let row = &json["rows"][0];
+        for key in &[
+            "hostname",
+            "fleet_id",
+            "port",
+            "proto",
+            "process",
+            "pid",
+            "bind",
+            "collected_at",
+            "stale",
+        ] {
+            assert!(
+                row.get(*key).is_some(),
+                "missing port row key: {key} — field rename breaks golden contract"
+            );
+        }
+    }
+
+    /// build_workloads_json_at produces correct stale flags
+    #[test]
+    fn build_workloads_json_at_stale_flag() {
+        let rows = vec![fresh_workload_row(), stale_workload_row()];
+        let export = build_workloads_json_at(
+            rows.as_slice(),
+            "2026-06-22T00:00:00Z".to_owned(),
+            THREE_HOURS,
+        );
+        assert_eq!(export.generated_at, "2026-06-22T00:00:00Z");
+        assert_eq!(export.rows.len(), 2);
+        assert!(!export.rows[0].stale, "fresh workload must not be stale");
+        assert!(export.rows[1].stale, "4h-old workload must be stale");
+    }
+
+    /// build_workloads_json_at stale is bool — schema-lock type check
+    #[test]
+    fn build_workloads_json_at_stale_is_bool() {
+        let rows = vec![fresh_workload_row()];
+        let export = build_workloads_json_at(
+            rows.as_slice(),
+            "2026-06-22T00:00:00Z".to_owned(),
+            THREE_HOURS,
+        );
+        let json = serde_json::to_value(&export).unwrap();
+        let row = &json["rows"][0];
+        assert!(
+            row["stale"].is_boolean(),
+            "stale must be a JSON boolean, got: {}",
+            row["stale"]
+        );
+    }
+
+    /// build_workloads_json_at field names are locked — rename breaks this test
+    #[test]
+    fn build_workloads_json_at_golden_key_paths() {
+        let rows = vec![fresh_workload_row()];
+        let export = build_workloads_json_at(
+            rows.as_slice(),
+            "2026-06-22T00:00:00Z".to_owned(),
+            THREE_HOURS,
+        );
+        let json = serde_json::to_value(&export).unwrap();
+        let row = &json["rows"][0];
+        for key in &[
+            "hostname",
+            "fleet_id",
+            "label",
+            "category",
+            "process_count",
+            "total_cpu_percent",
+            "total_memory_bytes",
+            "example_command",
+            "collected_at",
+            "stale",
+        ] {
+            assert!(
+                row.get(*key).is_some(),
+                "missing workload row key: {key} — field rename breaks golden contract"
+            );
+        }
     }
 }

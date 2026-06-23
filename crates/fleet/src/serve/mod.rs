@@ -80,6 +80,9 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/api/node/{id}", get(routes::get_node))
         .route("/api/path-health", get(routes::get_path_health))
         .route("/api/cf", get(routes::get_cf))
+        // JSON API (C9 — host snapshots)
+        .route("/api/ports", get(routes::get_api_ports))
+        .route("/api/workloads", get(routes::get_api_workloads))
         // Vendored CSS + HTMX (no CDN)
         .nest_service("/static", ServeDir::new(assets_dir()))
         .with_state(state)
@@ -495,6 +498,174 @@ mod tests {
         assert!(v["nodes"].is_array());
         assert!(node["online"].is_number(), "online must be numeric");
         assert!(node["tier"].is_string(), "tier must be a string");
+    }
+
+    // ── schema-lock: /api/ports ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn schema_lock_api_ports_key_paths() {
+        let node = make_node("fleet-ports-schema", "ports-schema-host");
+        let f = seed_db(&[node]);
+        let fresh_ts = (Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
+        {
+            let conn = db::open(f.path()).unwrap();
+            conn.execute(
+                "INSERT INTO host_snapshot
+                    (node_id, collected_at, hostname, total_cpu_percent,
+                     used_memory_bytes, total_memory_bytes, workload_count, port_count, snapshot_json)
+                 VALUES ('fleet-ports-schema', ?1, 'ports-schema-host', 0.0, 0, 0, 0, 1, '{}')",
+                rusqlite::params![fresh_ts],
+            ).unwrap();
+            let sid = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO host_port (snapshot_id, node_id, port, proto, process, pid, bind)
+                 VALUES (?1, 'fleet-ports-schema', 9090, 'TCP', 'testd', 100, '127.0.0.1')",
+                rusqlite::params![sid],
+            )
+            .unwrap();
+        }
+
+        let router = build_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/api/ports").await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v.get("generated_at").is_some(), "missing key: generated_at");
+        assert!(v.get("rows").is_some(), "missing key: rows");
+
+        let row = &v["rows"][0];
+        for key in &[
+            "hostname",
+            "fleet_id",
+            "port",
+            "proto",
+            "process",
+            "pid",
+            "bind",
+            "collected_at",
+            "stale",
+        ] {
+            assert!(
+                row.get(*key).is_some(),
+                "missing port row key: {key} — field rename breaks golden contract"
+            );
+        }
+        assert!(
+            row["port"].is_number(),
+            "port must be a JSON number, got: {}",
+            row["port"]
+        );
+        assert!(
+            row["stale"].is_boolean(),
+            "stale must be a JSON boolean, got: {}",
+            row["stale"]
+        );
+        assert_eq!(row["port"].as_u64(), Some(9090), "port value must be 9090");
+        assert_eq!(
+            row["stale"].as_bool(),
+            Some(false),
+            "fresh port must not be stale"
+        );
+    }
+
+    // ── schema-lock: /api/workloads ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn schema_lock_api_workloads_key_paths() {
+        let node = make_node("fleet-wl-schema", "wl-schema-host");
+        let f = seed_db(&[node]);
+        let fresh_ts = (Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
+        {
+            let conn = db::open(f.path()).unwrap();
+            conn.execute(
+                "INSERT INTO host_snapshot
+                    (node_id, collected_at, hostname, total_cpu_percent,
+                     used_memory_bytes, total_memory_bytes, workload_count, port_count, snapshot_json)
+                 VALUES ('fleet-wl-schema', ?1, 'wl-schema-host', 0.0, 0, 0, 1, 0, '{}')",
+                rusqlite::params![fresh_ts],
+            ).unwrap();
+            let sid = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO host_workload
+                    (snapshot_id, node_id, label, category, process_count,
+                     total_cpu_percent, total_memory_bytes, example_command)
+                 VALUES (?1, 'fleet-wl-schema', 'ollama', 'llm', 1, 5.0, 1000000000, '/usr/bin/ollama serve')",
+                rusqlite::params![sid],
+            ).unwrap();
+        }
+
+        let router = build_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/api/workloads").await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v.get("generated_at").is_some(), "missing key: generated_at");
+        assert!(v.get("rows").is_some(), "missing key: rows");
+
+        let row = &v["rows"][0];
+        for key in &[
+            "hostname",
+            "fleet_id",
+            "label",
+            "category",
+            "process_count",
+            "total_cpu_percent",
+            "total_memory_bytes",
+            "example_command",
+            "collected_at",
+            "stale",
+        ] {
+            assert!(
+                row.get(*key).is_some(),
+                "missing workload row key: {key} — field rename breaks golden contract"
+            );
+        }
+        assert!(
+            row["stale"].is_boolean(),
+            "stale must be a JSON boolean, got: {}",
+            row["stale"]
+        );
+        assert_eq!(
+            row["stale"].as_bool(),
+            Some(false),
+            "fresh workload must not be stale"
+        );
+    }
+
+    // ── /api/ports empty DB returns empty rows ────────────────────────────────
+
+    #[tokio::test]
+    async fn api_ports_empty_db_returns_empty_rows() {
+        let f = seed_db(&[]);
+        let router = build_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/api/ports").await;
+        assert_eq!(status, StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v["rows"].is_array());
+        assert_eq!(v["rows"].as_array().unwrap().len(), 0);
+    }
+
+    // ── /api/workloads empty DB returns empty rows ────────────────────────────
+
+    #[tokio::test]
+    async fn api_workloads_empty_db_returns_empty_rows() {
+        let f = seed_db(&[]);
+        let router = build_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/api/workloads").await;
+        assert_eq!(status, StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v["rows"].is_array());
+        assert_eq!(v["rows"].as_array().unwrap().len(), 0);
     }
 
     // ════════════════════════════════════════════════════════════════════════

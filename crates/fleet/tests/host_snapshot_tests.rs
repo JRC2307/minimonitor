@@ -249,8 +249,8 @@ fn scrub_at_rest() {
     let (_f, mut conn) = open_temp();
     insert_test_node(&conn, "node-scrub");
 
-    // Plant a secret in a ProcessRow.command
-    let secret = "supersecret_token_abc123";
+    // Plant a secret in a ProcessRow.command (intentional test data)
+    let secret = "supersecret_token_abc123"; // # pragma: allowlist secret
     let mut snap = make_minimal_snapshot(5.0, None);
     // Put secret in process command
     snap.processes[0].command = format!("/usr/bin/myapp --token={secret}");

@@ -1,3 +1,4 @@
+pub mod agent_client;
 pub mod alert;
 pub mod beszel;
 pub mod cloudflare;

@@ -435,6 +435,8 @@ mod tests {
             healthchecks: None,
             probe: None,
             serve: None,
+            collect: crate::config::CollectConfig::default(),
+            snapshot_stale_secs: 10_800,
         }
     }
 

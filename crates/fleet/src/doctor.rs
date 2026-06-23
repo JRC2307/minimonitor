@@ -152,6 +152,72 @@ pub fn check_serve_bind(bind: &str) -> anyhow::Result<()> {
     validate_tailnet_bind(bind).map_err(|e| anyhow::anyhow!("serve.bind {e}"))
 }
 
+// ─── Agent bind check (spec §3.4 / C9) ───────────────────────────────────────
+
+/// Validate the **static agent bind** string (e.g. from a LaunchAgent
+/// `ProgramArguments --bind` flag). Loopback (`127.0.0.1`, `127.*`, `::1`,
+/// `[::1]`) is always accepted. Non-loopback binds are delegated to
+/// `core::net::validate_tailnet_bind` which enforces CGNAT / Tailscale-ULA / template rules.
+///
+/// This is the static check (spec §3.4). For the active running-process check
+/// see [`check_agent_live_bind`].
+pub fn check_agent_bind(bind: &str) -> anyhow::Result<()> {
+    // Extract the host from HOST:PORT so loopback detection is correct even when
+    // a port is appended (e.g. "127.0.0.1:9909").
+    let host = match bind.rsplit_once(':') {
+        Some((h, _)) => h.trim_start_matches('[').trim_end_matches(']'),
+        None => bind,
+    };
+    if host == "127.0.0.1" || host.starts_with("127.") || host == "::1" {
+        return Ok(());
+    }
+    validate_tailnet_bind(bind).map_err(|e| anyhow::anyhow!("agent.bind {e}"))
+}
+
+/// Return `true` if `addr` is a safe (loopback or CGNAT) bind address.
+///
+/// "Safe" means the agent is only reachable by the local host or via a
+/// Tailscale CGNAT (`100.64.0.0/10`) address — never via a public IP,
+/// the wildcard `0.0.0.0`, or the dual-stack wildcard `[::]`.
+///
+/// # Examples
+/// ```
+/// assert!(fleet::doctor::is_agent_bind_safe("127.0.0.1"));
+/// assert!(fleet::doctor::is_agent_bind_safe("::1"));
+/// assert!(fleet::doctor::is_agent_bind_safe("100.96.1.2"));
+/// assert!(!fleet::doctor::is_agent_bind_safe("0.0.0.0"));
+/// assert!(!fleet::doctor::is_agent_bind_safe("203.0.113.5"));
+/// ```
+pub fn is_agent_bind_safe(addr: &str) -> bool {
+    // Strip brackets from IPv6 addresses like "[::1]" or "[::]"
+    let addr = addr.trim_start_matches('[').trim_end_matches(']');
+    if addr == "127.0.0.1" || addr.starts_with("127.") || addr == "::1" {
+        return true;
+    }
+    // CGNAT range (100.64.0.0/10)
+    if let Ok(ip) = addr.parse::<std::net::Ipv4Addr>() {
+        return is_cgnat(ip);
+    }
+    // Everything else (0.0.0.0, ::, public IPs, etc.) is unsafe
+    false
+}
+
+/// Scan the locally-running port listeners for port 9909 and reject any bind
+/// that is neither loopback nor CGNAT (i.e. wildcard or public exposure).
+///
+/// This is the active check (spec §3.4). It only makes sense on the local box.
+/// Remote nodes get the static check only.
+pub fn check_agent_live_bind() -> anyhow::Result<()> {
+    use minimonitor_core::net::listening_ports;
+    for row in listening_ports().into_iter().filter(|r| r.port == 9909) {
+        let b = &row.bind;
+        if !is_agent_bind_safe(b) {
+            anyhow::bail!("agent live bind on :9909 is `{b}` — wildcard/public exposure");
+        }
+    }
+    Ok(())
+}
+
 // ─── Secret-resolvability check ──────────────────────────────────────────────
 
 /// Attempt to resolve each `(env_var, keychain_service)` pair using the provided
@@ -222,6 +288,145 @@ mod tests {
     fn template_variable_accepted() {
         // ${HOST_TS_IP} is not a parseable IP — treat as deferred template
         assert!(validate_port_bind("svc", "${HOST_TS_IP}:8090:8090").is_ok());
+    }
+
+    // ── is_agent_bind_safe (Fix 2 pure helper) ───────────────────────────────
+
+    #[test]
+    fn is_agent_bind_safe_loopback() {
+        assert!(is_agent_bind_safe("127.0.0.1"), "127.0.0.1 must be safe");
+        assert!(is_agent_bind_safe("127.0.0.2"), "127.x must be safe");
+        assert!(is_agent_bind_safe("127.100.0.1"), "127.x.x.x must be safe");
+        assert!(is_agent_bind_safe("::1"), "::1 must be safe");
+        assert!(
+            is_agent_bind_safe("[::1]"),
+            "[::1] (bracketed) must be safe"
+        );
+    }
+
+    #[test]
+    fn is_agent_bind_safe_cgnat() {
+        assert!(
+            is_agent_bind_safe("100.64.0.0"),
+            "100.64.0.0 CGNAT edge must be safe"
+        );
+        assert!(
+            is_agent_bind_safe("100.96.1.2"),
+            "100.96.x CGNAT must be safe"
+        );
+        assert!(
+            is_agent_bind_safe("100.127.255.255"),
+            "100.127.255.255 CGNAT edge must be safe"
+        );
+    }
+
+    #[test]
+    fn is_agent_bind_safe_unsafe_addresses() {
+        assert!(!is_agent_bind_safe("0.0.0.0"), "wildcard must be unsafe");
+        assert!(!is_agent_bind_safe("::"), "IPv6 wildcard must be unsafe");
+        assert!(!is_agent_bind_safe("[::]"), "[::] bracketed must be unsafe");
+        assert!(
+            !is_agent_bind_safe("203.0.113.5"),
+            "public IP must be unsafe"
+        );
+        assert!(!is_agent_bind_safe("192.168.1.1"), "LAN IP must be unsafe");
+        assert!(
+            !is_agent_bind_safe("100.63.255.255"),
+            "just-below CGNAT must be unsafe"
+        );
+        assert!(
+            !is_agent_bind_safe("100.128.0.0"),
+            "just-above CGNAT must be unsafe"
+        );
+    }
+
+    // ── agent bind check (spec §3.4 / C9) ────────────────────────────────────
+
+    #[test]
+    fn check_agent_bind_loopback_ok() {
+        assert!(
+            check_agent_bind("127.0.0.1:9909").is_ok(),
+            "loopback must be accepted"
+        );
+        assert!(
+            check_agent_bind("127.0.0.1").is_ok(),
+            "bare loopback must be accepted"
+        );
+        assert!(
+            check_agent_bind("127.0.0.2:9909").is_ok(),
+            "127.x loopback must be accepted"
+        );
+    }
+
+    #[test]
+    fn check_agent_bind_cgnat_ok() {
+        assert!(
+            check_agent_bind("100.96.1.2:9909").is_ok(),
+            "CGNAT 100.96.x must be accepted"
+        );
+        assert!(
+            check_agent_bind("100.64.0.1:9909").is_ok(),
+            "CGNAT 100.64.x must be accepted"
+        );
+    }
+
+    #[test]
+    fn check_agent_bind_wildcard_rejected() {
+        assert!(
+            check_agent_bind("0.0.0.0:9909").is_err(),
+            "0.0.0.0 wildcard must be rejected"
+        );
+        assert!(
+            check_agent_bind("[::]:9909").is_err(),
+            "[::] wildcard must be rejected"
+        );
+    }
+
+    #[test]
+    fn check_agent_bind_non_cgnat_rejected() {
+        assert!(
+            check_agent_bind("192.168.1.1:9909").is_err(),
+            "LAN IP must be rejected"
+        );
+        assert!(
+            check_agent_bind("203.0.113.5:9909").is_err(),
+            "public IP must be rejected"
+        );
+    }
+
+    #[test]
+    fn check_agent_bind_token_env_returns_name_not_value() {
+        // Verify that check_secret_resolvability returns service NAMES, not values.
+        // This test proves the contract: if an env var is unresolvable, we get its
+        // service name back, never a secret value.
+        let secrets: &[(&str, &str)] = &[("MINIMONITOR_AGENT_TOKEN", "minimonitor-agent-token")];
+        // Use absent keychain so both resolution paths fail.
+        let unresolved = check_secret_resolvability(secrets, crate::secrets::keychain_absent_fn);
+        // The result must contain the service NAME, not any value.
+        assert!(
+            unresolved.contains(&"minimonitor-agent-token".to_owned()),
+            "unresolved must contain service name 'minimonitor-agent-token', got: {unresolved:?}"
+        );
+        // The env var name itself must NOT appear in unresolved (we return service names)
+        assert!(
+            !unresolved.contains(&"MINIMONITOR_AGENT_TOKEN".to_owned()),
+            "unresolved must return SERVICE NAME not env var name, got: {unresolved:?}"
+        );
+    }
+
+    #[test]
+    fn check_secret_resolvability_set_env_resolves() {
+        // When the env var IS set, no unresolved names are returned.
+        // SAFETY: single-threaded test; no other tests read this specific env var.
+        unsafe { std::env::set_var("_MINIMONITOR_TEST_TOKEN_C9", "not-a-real-secret") };
+        let secrets: &[(&str, &str)] = &[("_MINIMONITOR_TEST_TOKEN_C9", "minimonitor-agent-token")];
+        let unresolved = check_secret_resolvability(secrets, crate::secrets::keychain_absent_fn);
+        // SAFETY: paired set/remove, no concurrent reads.
+        unsafe { std::env::remove_var("_MINIMONITOR_TEST_TOKEN_C9") };
+        assert!(
+            unresolved.is_empty(),
+            "set env var should resolve; got unresolved: {unresolved:?}"
+        );
     }
 
     // ── serve bind check (R-5, spec §3.8) — extends the Task-2 doctor suite ───

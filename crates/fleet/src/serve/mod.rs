@@ -72,6 +72,8 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/", get(routes::get_index))
         .route("/node/{id}", get(routes::get_node_html))
         .route("/paths", get(routes::get_paths_html))
+        .route("/ports", get(routes::get_ports_html))
+        .route("/workloads", get(routes::get_workloads_html))
         .route("/observability", get(routes::get_observability_html))
         // JSON API (Task 16)
         .route("/api/fleet", get(routes::get_fleet))
@@ -797,5 +799,287 @@ mod tests {
         let (status, body) = oneshot_get(router, "/static/app.css").await;
         assert_eq!(status, StatusCode::OK, "app.css should be served");
         assert!(!body.is_empty(), "app.css should be non-empty");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  Host snapshot pages — Task C8 (spec §6)
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// Seed a host snapshot for tests. `collected_at` is an RFC3339 string.
+    /// ports: Vec<(port, proto, process, pid, bind)>
+    /// workloads: Vec<(label, category, process_count, cpu_pct, mem_bytes, example_cmd)>
+    fn seed_host_snapshot(
+        db_path: &std::path::Path,
+        node_id: &str,
+        collected_at: &str,
+        workload_count: i64,
+        ports: Vec<(u16, &str, &str, i64, &str)>,
+        workloads: Vec<(&str, &str, i64, f64, i64, &str)>,
+    ) {
+        let conn = db::open(db_path).unwrap();
+        conn.execute(
+            "INSERT INTO host_snapshot
+                (node_id, collected_at, hostname, total_cpu_percent, used_memory_bytes,
+                 total_memory_bytes, workload_count, port_count, snapshot_json)
+             VALUES (?1, ?2, ?3, 55.5, 2147483648, 8589934592, ?4, ?5, '{}')",
+            rusqlite::params![
+                node_id,
+                collected_at,
+                node_id,
+                workload_count,
+                ports.len() as i64
+            ],
+        )
+        .unwrap();
+        let sid = conn.last_insert_rowid();
+        for (port, proto, process, pid, bind) in ports {
+            conn.execute(
+                "INSERT INTO host_port (snapshot_id, node_id, port, proto, process, pid, bind)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![sid, node_id, port as i64, proto, process, pid, bind],
+            )
+            .unwrap();
+        }
+        for (label, category, process_count, cpu_pct, mem_bytes, example_cmd) in workloads {
+            conn.execute(
+                "INSERT INTO host_workload
+                    (snapshot_id, node_id, label, category, process_count, total_cpu_percent,
+                     total_memory_bytes, example_command)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    sid,
+                    node_id,
+                    label,
+                    category,
+                    process_count,
+                    cpu_pct,
+                    mem_bytes,
+                    example_cmd
+                ],
+            )
+            .unwrap();
+        }
+    }
+
+    // ── /ports tests ─────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn ports_empty_db_returns_200_with_empty_state() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/ports").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains("class=\"empty\""),
+            "empty-state class missing:\n{html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ports_seeded_returns_200_with_rows() {
+        let node = make_node("fleet-p1", "port-host");
+        let f = seed_db(&[node]);
+        seed_host_snapshot(
+            f.path(),
+            "fleet-p1",
+            &Utc::now().to_rfc3339(),
+            0,
+            vec![(8080, "TCP", "nginx", 1234, "0.0.0.0")],
+            vec![],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/ports").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(html.contains("8080"), "port 8080 missing:\n{html}");
+        assert!(html.contains("TCP"), "proto TCP missing:\n{html}");
+    }
+
+    #[tokio::test]
+    async fn ports_stale_class_present() {
+        let node = make_node("fleet-p2", "stale-host");
+        let f = seed_db(&[node]);
+        let old_ts = (Utc::now() - chrono::Duration::hours(4)).to_rfc3339();
+        seed_host_snapshot(
+            f.path(),
+            "fleet-p2",
+            &old_ts,
+            0,
+            vec![(9090, "TCP", "myapp", 5678, "127.0.0.1")],
+            vec![],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/ports").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains("stale"),
+            "stale class missing in port row:\n{html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ports_fresh_no_stale_class() {
+        let node = make_node("fleet-p3", "fresh-host");
+        let f = seed_db(&[node]);
+        let fresh_ts = (Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
+        seed_host_snapshot(
+            f.path(),
+            "fleet-p3",
+            &fresh_ts,
+            0,
+            vec![(3000, "TCP", "app", 999, "0.0.0.0")],
+            vec![],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/ports").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        // The tbody row should NOT have class="stale"; the word "stale" might appear
+        // in the nav/CSS but the row should not.
+        assert!(
+            !html.contains("class=\"stale\""),
+            "fresh row should not have stale class:\n{html}"
+        );
+    }
+
+    // ── /workloads tests ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn workloads_empty_db_returns_200_with_empty_state() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/workloads").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains("class=\"empty\""),
+            "empty-state class missing:\n{html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn workloads_seeded_returns_200_with_rows() {
+        let node = make_node("fleet-w1", "wl-host");
+        let f = seed_db(&[node]);
+        seed_host_snapshot(
+            f.path(),
+            "fleet-w1",
+            &Utc::now().to_rfc3339(),
+            1,
+            vec![],
+            vec![(
+                "llama.cpp",
+                "inference",
+                2,
+                42.5,
+                4_000_000_000,
+                "llama-run model.gguf",
+            )],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/workloads").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains("llama.cpp"),
+            "workload label missing:\n{html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn workloads_top6_note_when_workload_count_exceeds_rows() {
+        let node = make_node("fleet-w2", "top6-host");
+        let f = seed_db(&[node]);
+        // workload_count=10 but only 1 workload row inserted → "showing top 1 of 10"
+        seed_host_snapshot(
+            f.path(),
+            "fleet-w2",
+            &Utc::now().to_rfc3339(),
+            10,
+            vec![],
+            vec![(
+                "stable-diffusion",
+                "image-gen",
+                3,
+                80.0,
+                8_000_000_000,
+                "sd_xl_turbo",
+            )],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/workloads").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains("showing top") || html.contains("of 10"),
+            "top-N note missing when workload_count exceeds rendered rows:\n{html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn workloads_stale_class_present() {
+        let node = make_node("fleet-w3", "stale-wl-host");
+        let f = seed_db(&[node]);
+        let old_ts = (Utc::now() - chrono::Duration::hours(4)).to_rfc3339();
+        seed_host_snapshot(
+            f.path(),
+            "fleet-w3",
+            &old_ts,
+            1,
+            vec![],
+            vec![("ollama", "llm", 1, 10.0, 2_000_000_000, "ollama run llama3")],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/workloads").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains("stale"),
+            "stale class missing in workload row:\n{html}"
+        );
+    }
+
+    // ── /node/{id} host snapshot tests ───────────────────────────────────────
+
+    #[tokio::test]
+    async fn node_with_snapshot_shows_host_section() {
+        let node = make_node("fleet-n1", "snap-host");
+        let f = seed_db(&[node]);
+        seed_host_snapshot(
+            f.path(),
+            "fleet-n1",
+            &Utc::now().to_rfc3339(),
+            1,
+            vec![(443, "TCP", "nginx", 100, "0.0.0.0")],
+            vec![(
+                "vllm",
+                "inference",
+                1,
+                75.0,
+                6_000_000_000,
+                "vllm serve llama3",
+            )],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/node/fleet-n1").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        // cpu and mem should be formatted and present
+        assert!(
+            html.contains("55.5%"),
+            "cpu percent missing in host section:\n{html}"
+        );
+        // Memory: 2147483648 bytes = 2.0 GB
+        assert!(
+            html.contains("2.0 GB"),
+            "used memory missing in host section:\n{html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn node_without_snapshot_shows_200_not_500() {
+        let node = make_node("fleet-n2", "no-snap-host");
+        let f = seed_db(&[node]);
+        // No snapshot seeded
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/node/fleet-n2").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains("No host snapshot"),
+            "missing 'No host snapshot' message:\n{html}"
+        );
     }
 }

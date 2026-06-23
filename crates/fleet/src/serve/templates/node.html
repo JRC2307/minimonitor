@@ -39,4 +39,39 @@
 {% endif %}
 
 {% match notes %}{% when Some with (n) %}<h2>notes</h2><p>{{ n }}</p>{% when None %}{% endmatch %}
+
+<h2>host snapshot</h2>
+{% match host_snapshot %}
+{% when None %}
+<p class="empty">No host snapshot collected yet. Run <code>fleet collect</code>.</p>
+{% when Some with (snap) %}
+<p class="meta">collected {{ snap.collected_at }}{% if snap.stale %} <span class="stale-badge">stale</span>{% endif %}</p>
+<dl class="detail">
+  <dt>cpu</dt><dd>{{ snap.cpu_pct }}</dd>
+  <dt>memory</dt><dd>{{ snap.mem_used }} / {{ snap.mem_total }}</dd>
+  {% match snap.gpu_pct %}{% when Some with (g) %}<dt>gpu</dt><dd>{{ g }}</dd>{% when None %}{% endmatch %}
+</dl>
+{% if !snap.ports.is_empty() %}
+<h3>listening ports ({{ snap.ports.len() }})</h3>
+<table class="ports">
+  <thead><tr><th>port</th><th>proto</th><th>process</th><th>pid</th><th>bind</th></tr></thead>
+  <tbody>
+    {% for p in snap.ports %}
+    <tr><td>{{ p.port }}</td><td>{{ p.proto }}</td><td><code>{{ p.process }}</code></td><td>{{ p.pid }}</td><td><code>{{ p.bind }}</code></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if !snap.workloads.is_empty() %}
+<h3>AI workloads{% match snap.showing_top_n_note %}{% when Some with (note) %} <span class="note">({{ note }})</span>{% when None %}{% endmatch %}</h3>
+<table class="workloads">
+  <thead><tr><th>label</th><th>category</th><th>procs</th><th>cpu%</th><th>mem</th><th>example command</th></tr></thead>
+  <tbody>
+    {% for w in snap.workloads %}
+    <tr><td>{{ w.label }}</td><td>{{ w.category }}</td><td>{{ w.process_count }}</td><td>{{ w.cpu_pct }}</td><td>{{ w.mem_human }}</td><td><code>{{ w.example_command }}</code></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endmatch %}
 {% endblock %}

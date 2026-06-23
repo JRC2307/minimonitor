@@ -36,6 +36,39 @@ pub struct AppState {
     pub kuma_ui_url: String,
 }
 
+// ── format helpers ────────────────────────────────────────────────────────────
+
+fn fmt_bytes(bytes: i64) -> String {
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let kb = bytes as f64 / 1024.0;
+    if kb < 1024.0 {
+        return format!("{kb:.1} KB");
+    }
+    let mb = kb / 1024.0;
+    if mb < 1024.0 {
+        return format!("{mb:.1} MB");
+    }
+    let gb = mb / 1024.0;
+    format!("{gb:.1} GB")
+}
+
+fn fmt_pct(pct: f64) -> String {
+    format!("{pct:.1}%")
+}
+
+fn truncate80(s: &str) -> String {
+    if s.len() <= 80 {
+        s.to_owned()
+    } else {
+        // Char-safe: slice on a UTF-8 boundary so a multi-byte char near byte 79
+        // can't panic (a malicious/odd command line could carry non-ASCII).
+        let end = s.char_indices().nth(79).map(|(i, _)| i).unwrap_or(s.len());
+        format!("{}…", &s[..end])
+    }
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /// Open a read-only connection and return a 500 on failure.
@@ -246,6 +279,58 @@ pub async fn get_node_html(State(state): State<AppState>, Path(id): Path<String>
         Err(e) => return html_500(e),
     };
 
+    let host_snapshot = match db::host::latest_for_node(&conn, &node.fleet_id) {
+        Ok(Some(hs)) => {
+            let ports = db::host::ports_for_node(&conn, &node.fleet_id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|p| templates::HostPortRow {
+                    port: p.port,
+                    proto: p.proto,
+                    process: p.process,
+                    pid: p.pid,
+                    bind: p.bind,
+                })
+                .collect();
+            let workloads_db =
+                db::host::workloads_for_node(&conn, &node.fleet_id).unwrap_or_default();
+            let rendered_count = workloads_db.len() as i64;
+            let workloads = workloads_db
+                .into_iter()
+                .map(|w| templates::HostWorkloadRow {
+                    label: w.label,
+                    category: w.category,
+                    process_count: w.process_count,
+                    cpu_pct: fmt_pct(w.total_cpu_percent),
+                    mem_human: fmt_bytes(w.total_memory_bytes),
+                    example_command: truncate80(&w.example_command),
+                })
+                .collect();
+            let showing_top_n_note = if hs.workload_count > rendered_count {
+                Some(format!(
+                    "showing top {} of {}",
+                    rendered_count, hs.workload_count
+                ))
+            } else {
+                None
+            };
+            Some(templates::HostSnapshotView {
+                collected_at: hs.collected_at.clone(),
+                stale: crate::model::is_stale(&hs.collected_at, state.snapshot_stale_threshold),
+                cpu_pct: fmt_pct(hs.total_cpu_percent),
+                mem_used: fmt_bytes(hs.used_memory_bytes),
+                mem_total: fmt_bytes(hs.total_memory_bytes),
+                gpu_pct: hs.gpu_percent.map(fmt_pct),
+                ports,
+                workloads,
+                workload_count: hs.workload_count,
+                showing_top_n_note,
+            })
+        }
+        Ok(None) => None,
+        Err(e) => return html_500(e),
+    };
+
     let page = templates::NodePage {
         online: is_online(node.last_seen, state.online_threshold),
         tier: tier_str(node.tier).to_owned(),
@@ -269,6 +354,7 @@ pub async fn get_node_html(State(state): State<AppState>, Path(id): Path<String>
         hostname: node.hostname,
         fqdn: node.fqdn,
         os: node.os,
+        host_snapshot,
     };
     templates::render(&page)
 }
@@ -297,6 +383,92 @@ pub async fn get_paths_html(State(state): State<AppState>) -> Response {
                 dest_loss_pct: p.dest_loss_pct,
                 dest_avg_ms: p.dest_avg_ms,
                 dest_severity: p.dest_severity,
+            })
+            .collect(),
+    };
+    templates::render(&page)
+}
+
+// ── GET /ports (fleet-wide listening ports) ──────────────────────────────────
+
+pub async fn get_ports_html(State(state): State<AppState>) -> Response {
+    let conn = match ro_conn(&state) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+
+    let rows = match db::host::all_ports(&conn) {
+        Ok(r) => r,
+        Err(e) => return html_500(e),
+    };
+
+    let page = templates::PortsPage {
+        rows: rows
+            .into_iter()
+            .map(|r| templates::FleetPortViewRow {
+                fleet_id: r.node_id,
+                hostname: r.hostname,
+                port: r.port,
+                proto: r.proto,
+                process: r.process,
+                pid: r.pid,
+                bind: r.bind,
+                collected_at: r.collected_at.clone(),
+                stale: crate::model::is_stale(&r.collected_at, state.snapshot_stale_threshold),
+            })
+            .collect(),
+    };
+    templates::render(&page)
+}
+
+// ── GET /workloads (fleet-wide AI workloads) ──────────────────────────────────
+
+pub async fn get_workloads_html(State(state): State<AppState>) -> Response {
+    let conn = match ro_conn(&state) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+
+    let rows = match db::host::all_workloads(&conn) {
+        Ok(r) => r,
+        Err(e) => return html_500(e),
+    };
+
+    // For each node, we need to know how many workload rows were rendered
+    // to decide if "showing top N of M" note applies.
+    // Group by node_id to count rendered rows per node.
+    let mut node_rendered_counts: std::collections::HashMap<String, i64> =
+        std::collections::HashMap::new();
+    for r in &rows {
+        *node_rendered_counts.entry(r.node_id.clone()).or_insert(0) += 1;
+    }
+
+    let page = templates::WorkloadsPage {
+        rows: rows
+            .into_iter()
+            .map(|r| {
+                let rendered_for_node = node_rendered_counts.get(&r.node_id).copied().unwrap_or(0);
+                let showing_top_n_note = if r.workload_count > rendered_for_node {
+                    Some(format!(
+                        "showing top {} of {}",
+                        rendered_for_node, r.workload_count
+                    ))
+                } else {
+                    None
+                };
+                templates::FleetWorkloadViewRow {
+                    fleet_id: r.node_id,
+                    hostname: r.hostname,
+                    label: r.label,
+                    category: r.category,
+                    process_count: r.process_count,
+                    cpu_pct: fmt_pct(r.total_cpu_percent),
+                    mem_human: fmt_bytes(r.total_memory_bytes),
+                    example_command: truncate80(&r.example_command),
+                    collected_at: r.collected_at.clone(),
+                    stale: crate::model::is_stale(&r.collected_at, state.snapshot_stale_threshold),
+                    showing_top_n_note,
+                }
             })
             .collect(),
     };

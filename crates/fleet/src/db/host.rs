@@ -61,6 +61,9 @@ pub struct FleetWorkloadRow {
     pub total_cpu_percent: f64,
     pub total_memory_bytes: i64,
     pub example_command: String,
+    /// Total workload count from the parent `host_snapshot` row.
+    /// Used by `/workloads` to display "showing top N of M" notes.
+    pub workload_count: i64,
 }
 
 /// Insert one host snapshot (parent + child rows + status upsert) as a single
@@ -333,7 +336,8 @@ pub fn all_workloads(conn: &Connection) -> anyhow::Result<Vec<FleetWorkloadRow>>
         .prepare(
             "SELECT hw.node_id, hs.hostname, hs.collected_at,
                     hw.label, hw.category, hw.process_count,
-                    hw.total_cpu_percent, hw.total_memory_bytes, hw.example_command
+                    hw.total_cpu_percent, hw.total_memory_bytes, hw.example_command,
+                    hs.workload_count
              FROM host_workload hw
              JOIN host_snapshot hs ON hs.id = hw.snapshot_id
              WHERE hs.id IN (SELECT MAX(id) FROM host_snapshot GROUP BY node_id)
@@ -353,6 +357,7 @@ pub fn all_workloads(conn: &Connection) -> anyhow::Result<Vec<FleetWorkloadRow>>
                 total_cpu_percent: r.get(6)?,
                 total_memory_bytes: r.get(7)?,
                 example_command: r.get(8)?,
+                workload_count: r.get(9)?,
             })
         })
         .context("query all_workloads")?;
@@ -403,7 +408,8 @@ pub fn workloads_for_node(
         .prepare(
             "SELECT hw.node_id, hs.hostname, hs.collected_at,
                     hw.label, hw.category, hw.process_count,
-                    hw.total_cpu_percent, hw.total_memory_bytes, hw.example_command
+                    hw.total_cpu_percent, hw.total_memory_bytes, hw.example_command,
+                    hs.workload_count
              FROM host_workload hw
              JOIN host_snapshot hs ON hs.id = hw.snapshot_id
              WHERE hw.node_id = ?1
@@ -424,6 +430,7 @@ pub fn workloads_for_node(
                 total_cpu_percent: r.get(6)?,
                 total_memory_bytes: r.get(7)?,
                 example_command: r.get(8)?,
+                workload_count: r.get(9)?,
             })
         })
         .context("query workloads_for_node")?;

@@ -98,7 +98,9 @@ fn project_from_command(cmd: &str) -> Option<String> {
     for (idx, _) in cmd.match_indices("projects/") {
         let after = &cmd[idx + "projects/".len()..];
         let mut segs = after.split('/');
-        let typ = segs.next()?;
+        // `continue` (not `?`): a degenerate empty segment after "projects/"
+        // must skip to the next match, never abort the whole search.
+        let Some(typ) = segs.next() else { continue };
         if !PROJECT_TYPES.contains(&typ) {
             continue;
         }
@@ -178,6 +180,15 @@ mod tests {
                 "command: {cmd}"
             );
         }
+    }
+
+    #[test]
+    fn tier2_skips_unknown_match_and_finds_later_valid_one() {
+        // First "projects/random" is an unknown type → must be skipped, NOT abort
+        // the search; the later "projects/startup/myapp" must still resolve.
+        let labels = Labels::empty();
+        let cmd = "/mirror/projects/random/foo/real/projects/startup/myapp/run";
+        assert_eq!(resolve_service(0, Some(cmd), "proc", &labels), "myapp");
     }
 
     #[test]

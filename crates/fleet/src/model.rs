@@ -309,14 +309,15 @@ impl std::fmt::Display for FleetId {
 
 /// Derive online status from `last_seen` freshness.
 ///
-/// Never trusts a stored `online` flag — recomputes at call time.
-/// Returns `false` if `last_seen` is in the future (clock skew / unparseable).
+/// Never trusts a stored `online` flag — recomputes at call time. Uses a SIGNED
+/// duration: a `last_seen` at/after `now` (age <= 0, i.e. a device seen this
+/// instant or a hair in the future from clock skew) is the freshest possible
+/// signal and counts as ONLINE. The old `.to_std()` form errored on negative
+/// durations and silently reported just-seen devices as offline (caught against
+/// a live tailnet 2026-06-23).
 pub fn is_online(last_seen: chrono::DateTime<Utc>, max_age: std::time::Duration) -> bool {
-    Utc::now()
-        .signed_duration_since(last_seen)
-        .to_std()
-        .map(|age| age < max_age)
-        .unwrap_or(false)
+    let max = chrono::Duration::from_std(max_age).unwrap_or(chrono::Duration::MAX);
+    Utc::now().signed_duration_since(last_seen) < max
 }
 
 /// Slugify a hostname: lowercase, map chars outside [A-Za-z0-9._:-] to '-'.
@@ -367,6 +368,19 @@ pub fn parse_tags(raw: &[String]) -> Tags {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_online_boundary_now_and_future_are_online() {
+        let max = std::time::Duration::from_secs(900);
+        // Seen this instant → online (regression: previously stored offline at sync).
+        assert!(is_online(Utc::now(), max));
+        // Seen 2s in the FUTURE (clock skew between Tailscale + local) → online.
+        assert!(is_online(Utc::now() + chrono::Duration::seconds(2), max));
+        // Seen 5 min ago, threshold 15 min → online.
+        assert!(is_online(Utc::now() - chrono::Duration::minutes(5), max));
+        // Seen 20 min ago, threshold 15 min → offline.
+        assert!(!is_online(Utc::now() - chrono::Duration::minutes(20), max));
+    }
 
     #[test]
     fn parse_tags_extracts_facets() {

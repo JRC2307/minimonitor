@@ -139,7 +139,7 @@ Residual questions from spec §10 are answered **by recording a fixture during t
   - **canonical row:** freshest `lastSeen` device supplies hostname/fqdn/os.
 
 **Implementation.**
-- `tailscale.rs`: `TsClient::new(base_url)`; `oauth_token` (`grant_type=client_credentials`, scope `devices:read`); `devices(tailnet)` with `Retry-After` backoff; `TsDevice` deser (camelCase, parse `lastSeen` via `parse_from_rfc3339().with_timezone(&Utc)`).
+- `tailscale.rs`: `TsClient::new(base_url)`; `oauth_token` (`grant_type=client_credentials`, scope `devices:core:read`); `devices(tailnet)` with `Retry-After` backoff; `TsDevice` deser (camelCase, parse `lastSeen` via `parse_from_rfc3339().with_timezone(&Utc)`).
 - `merge.rs`: `merge(per_account, overrides, prior, threshold) -> Vec<Node>` implementing spec §3.4 steps 1–7 (collect/filter, `merge_key` ladder, group, canonical, fold, mint+relink, overrides applied in §3.4 step 7 — but the override-apply *logic* may be stubbed to call into Task-5's `overrides::apply`; here test the merge keying and folding).
 - `model.rs`: add `TsDevice`.
 

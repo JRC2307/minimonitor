@@ -3,7 +3,7 @@
 //! Two endpoints are used:
 //!   - `POST /api/v2/oauth/token` — exchange OAuth client credentials for a
 //!     short-lived bearer token (`grant_type=client_credentials`, scope
-//!     `devices:read`).
+//!     `devices:core:read`).
 //!   - `GET /api/v2/tailnet/{tailnet}/devices?fields=default` — list devices.
 //!
 //! The base URL is injectable so tests can point the client at a `wiremock`
@@ -44,7 +44,7 @@ impl TsClient {
 
     /// Exchange OAuth client credentials for a bearer access token.
     ///
-    /// `grant_type=client_credentials`, `scope=devices:read`. The client id and
+    /// `grant_type=client_credentials`, `scope=devices:core:read`. The client id and
     /// secret are sent as form fields (Tailscale accepts both form-body and
     /// HTTP basic; form-body keeps wiremock matching simple).
     pub async fn oauth_token(
@@ -58,7 +58,10 @@ impl TsClient {
             .post(&url)
             .form(&[
                 ("grant_type", "client_credentials"),
-                ("scope", "devices:read"),
+                // Tailscale's read scope is `devices:core:read`; `devices:read`
+                // is rejected with HTTP 403 "OAuth client cannot grant scopes"
+                // (verified against the live token endpoint, 2026-06-22).
+                ("scope", "devices:core:read"),
                 ("client_id", client_id),
                 ("client_secret", client_secret),
             ])
@@ -127,7 +130,7 @@ impl TsClient {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
-    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::matchers::{body_string_contains, header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
@@ -135,6 +138,12 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/v2/oauth/token"))
+            // Pin the scope: Tailscale rejects `devices:read` with 403; the
+            // valid read scope is `devices:core:read` (form-encoded `%3A`).
+            // Without this matcher a wrong scope would 404 the mock, failing
+            // the test — which is how the original `devices:read` bug must be
+            // prevented from regressing.
+            .and(body_string_contains("scope=devices%3Acore%3Aread"))
             .respond_with(ResponseTemplate::new(200).set_body_json(
                 serde_json::json!({"access_token": "tk_live_abc", "token_type": "Bearer"}),
             ))

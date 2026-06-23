@@ -1303,7 +1303,10 @@ mod tests {
         let f = seed_db(&[node]);
         {
             let conn = db::open(f.path()).unwrap();
-            let blob = r#"{"processes":[{"pid":7777,"command":"opencode web --port 4096"}]}"#;
+            // Command derives "cuentas" via tier-2 (projects/<type>/<name>); the raw
+            // process is "python3.1". "cuentas" can ONLY come from the resolver — so
+            // asserting it proves resolution happened, not a fallback to raw process.
+            let blob = r#"{"processes":[{"pid":7777,"command":"/Users/x/Desktop/1/projects/experiments/cuentas/.venv/bin/python app"}]}"#;
             conn.execute(
                 "INSERT INTO host_snapshot
                     (node_id, collected_at, hostname, total_cpu_percent, used_memory_bytes,
@@ -1315,7 +1318,7 @@ mod tests {
             let sid = conn.last_insert_rowid();
             conn.execute(
                 "INSERT INTO host_port (snapshot_id, node_id, port, proto, process, pid, bind)
-                 VALUES (?1, 'fleet-ns', 4096, 'TCP', 'opencode', 7777, '0.0.0.0')",
+                 VALUES (?1, 'fleet-ns', 8789, 'TCP', 'python3.1', 7777, '0.0.0.0')",
                 rusqlite::params![sid],
             )
             .unwrap();
@@ -1323,9 +1326,15 @@ mod tests {
         let router = full_router(f.path().to_path_buf());
         let (status, html) = html_get(router, "/node/fleet-ns").await;
         assert_eq!(status, StatusCode::OK, "body: {html}");
+        // Resolved name from the resolver (not derivable any other way).
         assert!(
-            html.contains("opencode"),
-            "resolved service missing:\n{html}"
+            html.contains("cuentas"),
+            "resolved service name missing:\n{html}"
+        );
+        // Raw process still shown as ground truth.
+        assert!(
+            html.contains("python3.1"),
+            "raw process should still render:\n{html}"
         );
     }
 }

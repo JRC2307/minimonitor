@@ -6,11 +6,11 @@ use tao::{
 };
 use wry::{WebView, WebViewBuilder, http::Request};
 
-use minimonitor_core::ai::AiWorkload;
 use crate::app::UserEvent;
+use crate::util::{format_bytes_pair, format_rate, make_window_icon, percentage};
+use minimonitor_core::ai::AiWorkload;
 use minimonitor_core::net::{ConnGroup, PortRow};
 use minimonitor_core::snapshot::{CoreUsage, DiskVolume, MonitorSnapshot, ProcessRow, is_visible};
-use crate::util::{format_bytes_pair, format_rate, make_window_icon, percentage};
 
 const MAX_INSPECTOR_PROCESSES: usize = 200;
 

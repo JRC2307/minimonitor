@@ -1,0 +1,53 @@
+[package]
+name = "fleet"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "fleet"
+path = "src/main.rs"
+
+[dependencies]
+minimonitor-core = { path = "../core" }
+clap = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+rusqlite_migration = { workspace = true }
+figment = { workspace = true }
+serde_yaml_ng = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+axum = { workspace = true }
+# `config` feature: read `askama.toml` so templates live under `src/serve/templates`
+# (spec §3.1) instead of the default `$CRATE/templates` dir.
+askama = { workspace = true, features = ["config"] }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+regex = { workspace = true }
+trippy-core = "=0.13.0"
+socket2 = "0.5"          # probe.rs self-check: open the unprivileged dgram-ICMP socket
+# rust_socketio (Kuma socket.io, Task 12): re-added after Task 1 deferred it.
+# TLS DECISION (documented exception): 0.6.0 exposes NO rustls feature — TLS is not
+# feature-gated; rust_engineio's tokio-tungstenite v0.21 pulls native-tls (→ OpenSSL on
+# Linux; macOS Security.framework). The fleet↔Kuma link is plaintext `ws://` over the
+# tailnet, so TLS is NEVER exercised at runtime — native-tls is merely linked, not used.
+# rustls (via reqwest) remains the primary path for every HTTPS call. `cargo audit` stays
+# clean with both linked. async-only, no default features, to keep the surface minimal.
+rust_socketio = { version = "0.6.0", default-features = false, features = ["async"] }
+futures-util = { version = "0.3.32", features = ["std"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+tokio = { workspace = true }
+tower = { workspace = true }
+# socketioxide default = socket.io protocol v5 (engine.io v4), which is exactly
+# what rust_socketio/rust_engineio (EIO=4) and Kuma's socket.io-client 4.8.1 speak.
+# (The `v4` feature means engine.io v3 — wrong for this transport.)
+socketioxide = "0.18.4"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/agent", "crates/menubar"]
+members = ["crates/core", "crates/agent", "crates/menubar", "crates/fleet"]
 
 [workspace.package]
 version = "0.2.0"
@@ -10,6 +10,23 @@ edition = "2024"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.37"
+clap = { version = "4.6", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rusqlite = { version = "0.35", features = ["bundled"] }
+rusqlite_migration = "2.1"
+figment = { version = "0.10", features = ["toml", "env"] }
+serde_yaml_ng = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+thiserror = "2"
+axum = { version = "0.8" }
+askama = "0.13"
+tower-http = { version = "0.6", features = ["fs"] }
+async-trait = "0.1"
+ipnet = "2"
+regex = "1"
+tower = "0.5"
 
 [profile.release]
 lto = true

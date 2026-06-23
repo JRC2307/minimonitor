@@ -3,10 +3,10 @@ use tray_icon::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
 };
 
-use minimonitor_core::snapshot::{MonitorSnapshot, SortMode, is_visible};
 use crate::util::{
     format_bytes, format_bytes_pair, format_rate, make_tray_icon, slugify, truncate_name,
 };
+use minimonitor_core::snapshot::{MonitorSnapshot, SortMode, is_visible};
 
 const MAX_MENU_PROCESSES: usize = 8;
 
@@ -20,11 +20,7 @@ pub fn build_tray(title: &str) -> TrayIcon {
         .expect("failed to create tray icon")
 }
 
-pub fn build_menu(
-    snapshot: &MonitorSnapshot,
-    sort_mode: SortMode,
-    status: Option<&str>,
-) -> Menu {
+pub fn build_menu(snapshot: &MonitorSnapshot, sort_mode: SortMode, status: Option<&str>) -> Menu {
     let menu = Menu::new();
 
     let line1 = MenuItem::new(
@@ -32,25 +28,35 @@ pub fn build_menu(
             "CPU {:.0}%   RAM {}   {}",
             snapshot.total_cpu_percent,
             format_bytes_pair(snapshot.used_memory_bytes, snapshot.total_memory_bytes),
-            match snapshot.gpu_percent { Some(v) => format!("GPU {v:.0}%"), None => "GPU n/a".into() },
+            match snapshot.gpu_percent {
+                Some(v) => format!("GPU {v:.0}%"),
+                None => "GPU n/a".into(),
+            },
         ),
-        false, None,
+        false,
+        None,
     );
     let line2 = MenuItem::new(
         format!(
             "Net ↓{} ↑{}   Disk ↓{} ↑{}",
-            format_rate(snapshot.net_rx_bps), format_rate(snapshot.net_tx_bps),
-            format_rate(snapshot.disk_read_bps), format_rate(snapshot.disk_write_bps),
+            format_rate(snapshot.net_rx_bps),
+            format_rate(snapshot.net_tx_bps),
+            format_rate(snapshot.disk_read_bps),
+            format_rate(snapshot.disk_write_bps),
         ),
-        false, None,
+        false,
+        None,
     );
     let line3 = MenuItem::new(
         format!(
             "Load {:.2} {:.2} {:.2}   Up {}",
-            snapshot.load_average.0, snapshot.load_average.1, snapshot.load_average.2,
+            snapshot.load_average.0,
+            snapshot.load_average.1,
+            snapshot.load_average.2,
             format_uptime(snapshot.uptime_secs),
         ),
-        false, None,
+        false,
+        None,
     );
 
     let ports = build_ports_submenu(snapshot);
@@ -60,19 +66,45 @@ pub fn build_menu(
 
     let show_inspector = MenuItem::with_id("show-inspector", "Show Inspector", true, None);
     let refresh = MenuItem::with_id("refresh-menu", "Refresh snapshot", true, None);
-    let sort_cpu = MenuItem::with_id("sort:cpu",
-        if sort_mode == SortMode::Cpu { "Sort: CPU •" } else { "Sort: CPU" }, true, None);
-    let sort_ram = MenuItem::with_id("sort:ram",
-        if sort_mode == SortMode::Memory { "Sort: RAM •" } else { "Sort: RAM" }, true, None);
+    let sort_cpu = MenuItem::with_id(
+        "sort:cpu",
+        if sort_mode == SortMode::Cpu {
+            "Sort: CPU •"
+        } else {
+            "Sort: CPU"
+        },
+        true,
+        None,
+    );
+    let sort_ram = MenuItem::with_id(
+        "sort:ram",
+        if sort_mode == SortMode::Memory {
+            "Sort: RAM •"
+        } else {
+            "Sort: RAM"
+        },
+        true,
+        None,
+    );
     let quit = MenuItem::with_id("quit", "Quit MiniMonitor", true, None);
     let sep1 = PredefinedMenuItem::separator();
     let sep2 = PredefinedMenuItem::separator();
     let sep3 = PredefinedMenuItem::separator();
 
     let _ = menu.append_items(&[
-        &line1, &line2, &line3, &sep1,
-        &ports, &processes, &ai_sub, &quick, &sep2,
-        &show_inspector, &refresh, &sort_cpu, &sort_ram,
+        &line1,
+        &line2,
+        &line3,
+        &sep1,
+        &ports,
+        &processes,
+        &ai_sub,
+        &quick,
+        &sep2,
+        &show_inspector,
+        &refresh,
+        &sort_cpu,
+        &sort_ram,
     ]);
 
     if let Some(msg) = status {
@@ -163,12 +195,17 @@ fn format_uptime(secs: u64) -> String {
     let d = secs / 86_400;
     let h = (secs % 86_400) / 3_600;
     let m = (secs % 3_600) / 60;
-    if d > 0 { format!("{d}d {h}h") } else if h > 0 { format!("{h}h {m}m") } else { format!("{m}m") }
+    if d > 0 {
+        format!("{d}d {h}h")
+    } else if h > 0 {
+        format!("{h}h {m}m")
+    } else {
+        format!("{m}m")
+    }
 }
 
 fn build_ports_submenu(snapshot: &MonitorSnapshot) -> Submenu {
-    let submenu = Submenu::new(
-        format!("Listening ports ({})", snapshot.ports.len()), true);
+    let submenu = Submenu::new(format!("Listening ports ({})", snapshot.ports.len()), true);
     if snapshot.ports.is_empty() {
         let _ = submenu.append(&MenuItem::new("No listening TCP ports", false, None));
         return submenu;
@@ -178,7 +215,12 @@ fn build_ports_submenu(snapshot: &MonitorSnapshot) -> Submenu {
     for p in ports.iter().take(MAX_MENU_PROCESSES * 2) {
         let child = Submenu::with_id(
             format!("port:{}", p.pid),
-            format!("{} • {} • {}", p.port, truncate_name(&p.process, 18), p.bind),
+            format!(
+                "{} • {} • {}",
+                p.port,
+                truncate_name(&p.process, 18),
+                p.bind
+            ),
             true,
         );
         let pid_item = MenuItem::new(format!("PID {}", p.pid), false, None);

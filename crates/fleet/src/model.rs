@@ -307,6 +307,20 @@ impl std::fmt::Display for FleetId {
     }
 }
 
+/// Check whether a host snapshot is stale based on its `collected_at` timestamp.
+///
+/// `collected_at` is an RFC3339 string (as stored in `host_snapshot.collected_at`).
+/// Returns `true` if the snapshot is older than `threshold` relative to now, or if
+/// `collected_at` cannot be parsed (fail-safe: unparseable ⇒ stale).
+pub fn is_stale(collected_at: &str, threshold: std::time::Duration) -> bool {
+    let parsed = match DateTime::parse_from_rfc3339(collected_at) {
+        Ok(dt) => dt.with_timezone(&Utc),
+        Err(_) => return true, // fail-safe: unparseable => stale
+    };
+    let max = chrono::Duration::from_std(threshold).unwrap_or(chrono::Duration::MAX);
+    Utc::now().signed_duration_since(parsed) > max
+}
+
 /// Derive online status from `last_seen` freshness.
 ///
 /// Never trusts a stored `online` flag — recomputes at call time. Uses a SIGNED
@@ -368,6 +382,46 @@ pub fn parse_tags(raw: &[String]) -> Tags {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── is_stale tests (C7) ─────────────────────────────────────────────────
+
+    #[test]
+    fn is_stale_fresh_timestamp_is_not_stale() {
+        // 1 minute ago with a 3h threshold => not stale
+        let one_min_ago = (Utc::now() - chrono::Duration::minutes(1)).to_rfc3339();
+        let threshold = std::time::Duration::from_secs(3 * 3600);
+        assert!(
+            !is_stale(&one_min_ago, threshold),
+            "1-min-old snapshot should not be stale with 3h threshold"
+        );
+    }
+
+    #[test]
+    fn is_stale_old_timestamp_is_stale() {
+        // 4 hours ago with a 3h threshold => stale
+        let four_hours_ago = (Utc::now() - chrono::Duration::hours(4)).to_rfc3339();
+        let threshold = std::time::Duration::from_secs(3 * 3600);
+        assert!(
+            is_stale(&four_hours_ago, threshold),
+            "4h-old snapshot should be stale with 3h threshold"
+        );
+    }
+
+    #[test]
+    fn is_stale_unparseable_is_stale() {
+        // fail-safe: unparseable timestamp => true
+        let threshold = std::time::Duration::from_secs(3 * 3600);
+        assert!(
+            is_stale("not-a-timestamp", threshold),
+            "unparseable timestamp should be considered stale (fail-safe)"
+        );
+        assert!(
+            is_stale("", threshold),
+            "empty timestamp should be considered stale (fail-safe)"
+        );
+    }
+
+    // ── is_online_boundary tests ─────────────────────────────────────────────
 
     #[test]
     fn is_online_boundary_now_and_future_are_online() {

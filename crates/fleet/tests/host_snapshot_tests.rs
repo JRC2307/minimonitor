@@ -1,4 +1,4 @@
-// C3 TDD — host-snapshot storage tests
+// C3 + C7 TDD — host-snapshot storage tests (write helpers C3, read helpers C7)
 // All tests use a temp-file SQLite opened via db::open (foreign_keys=ON via PRAGMA).
 // Fixtures from tests/fixtures/snapshot.json (already in the tree from C1).
 
@@ -478,5 +478,301 @@ fn record_collect_failure_preserves_success() {
     assert!(
         first_failure_success.is_none(),
         "last_success_at should be NULL for first-ever failure"
+    );
+}
+
+// ─── C7 Read helper tests ─────────────────────────────────────────────────────
+
+// Helpers to seed TWO snapshots for one node, with different ports, so we can
+// verify MAX(id) logic (only newer snapshot's data returned, ALL of its rows).
+
+fn make_snapshot_with_ports(ports: Vec<minimonitor_core::net::PortRow>) -> MonitorSnapshot {
+    let mut snap = make_minimal_snapshot(10.0, None);
+    snap.ports = ports;
+    snap
+}
+
+/// Seed two nodes with multiple snapshots for read-helper tests.
+///   - node-read-a: 2 snapshots. Snap 1 has ports [80, 443]. Snap 2 (newer, higher id)
+///     has ports [8080, 9090]. all_ports must return only snap 2's ports (both of them).
+///   - node-read-b: 1 snapshot with 1 port [22] and workload "GitServer" cpu=75.
+fn seed_two_node_scenario(conn: &mut rusqlite::Connection) {
+    insert_test_node(conn, "node-read-a");
+    insert_test_node(conn, "node-read-b");
+
+    let old_ports_a = vec![
+        minimonitor_core::net::PortRow {
+            port: 80,
+            proto: "TCP".into(),
+            process: "nginx-old".into(),
+            pid: 100,
+            bind: "0.0.0.0".into(),
+        },
+        minimonitor_core::net::PortRow {
+            port: 443,
+            proto: "TCP".into(),
+            process: "nginx-old-ssl".into(),
+            pid: 101,
+            bind: "0.0.0.0".into(),
+        },
+    ];
+
+    let new_ports_a = vec![
+        minimonitor_core::net::PortRow {
+            port: 8080,
+            proto: "TCP".into(),
+            process: "myapp".into(),
+            pid: 200,
+            bind: "127.0.0.1".into(),
+        },
+        minimonitor_core::net::PortRow {
+            port: 9090,
+            proto: "TCP".into(),
+            process: "metrics".into(),
+            pid: 201,
+            bind: "127.0.0.1".into(),
+        },
+    ];
+
+    let snap_a_old = make_snapshot_with_ports(old_ports_a);
+    let raw_a_old = serde_json::to_vec(&snap_a_old).unwrap();
+    // older timestamp
+    dbhost::insert_snapshot(
+        conn,
+        "node-read-a",
+        &raw_a_old,
+        &snap_a_old,
+        "2026-06-01T00:00:00+00:00",
+    )
+    .unwrap();
+
+    let snap_a_new = make_snapshot_with_ports(new_ports_a);
+    let raw_a_new = serde_json::to_vec(&snap_a_new).unwrap();
+    // newer timestamp
+    dbhost::insert_snapshot(
+        conn,
+        "node-read-a",
+        &raw_a_new,
+        &snap_a_new,
+        "2026-06-22T12:00:00+00:00",
+    )
+    .unwrap();
+
+    // node-b: one snapshot, workload with high cpu
+    let wl_b = vec![minimonitor_core::ai::AiWorkload {
+        label: "GitServer".into(),
+        category: "vcs".into(),
+        process_count: 2,
+        total_cpu_percent: 75.0,
+        total_memory_bytes: 500_000_000,
+        example_command: "/usr/bin/git-daemon".into(),
+    }];
+    let mut snap_b = make_minimal_snapshot(75.0, None);
+    snap_b.ports = vec![minimonitor_core::net::PortRow {
+        port: 22,
+        proto: "TCP".into(),
+        process: "sshd".into(),
+        pid: 300,
+        bind: "0.0.0.0".into(),
+    }];
+    snap_b.ai_snapshot.top_workloads = wl_b;
+    snap_b.ai_snapshot.workload_count = 1;
+    let raw_b = serde_json::to_vec(&snap_b).unwrap();
+    dbhost::insert_snapshot(
+        conn,
+        "node-read-b",
+        &raw_b,
+        &snap_b,
+        "2026-06-22T10:00:00+00:00",
+    )
+    .unwrap();
+}
+
+// ─── Test 9: all_ports returns only newest snapshot's ports, ALL of them ─────
+
+#[test]
+fn all_ports_returns_newest_snapshot_ports_only() {
+    let (_f, mut conn) = open_temp();
+    seed_two_node_scenario(&mut conn);
+
+    let ports = dbhost::all_ports(&conn).unwrap();
+
+    // Should have 3 ports total: 2 from node-a's NEWER snapshot (8080, 9090) + 1 from node-b (22)
+    // The 2 OLD ports (80, 443) from node-a's first snapshot MUST NOT appear.
+    assert_eq!(
+        ports.len(),
+        3,
+        "all_ports should return 3 ports (2 from node-a new snap + 1 from node-b): got {ports:?}"
+    );
+
+    let port_nums: Vec<u16> = ports.iter().map(|p| p.port).collect();
+    assert!(
+        port_nums.contains(&8080),
+        "port 8080 from node-a's newer snapshot must appear: {port_nums:?}"
+    );
+    assert!(
+        port_nums.contains(&9090),
+        "port 9090 from node-a's newer snapshot must appear: {port_nums:?}"
+    );
+    assert!(
+        port_nums.contains(&22),
+        "port 22 from node-b must appear: {port_nums:?}"
+    );
+    // The OLD ports (80, 443) must NOT appear (MAX(id) join)
+    assert!(
+        !port_nums.contains(&80),
+        "OLD port 80 from node-a's first snapshot must NOT appear: {port_nums:?}"
+    );
+    assert!(
+        !port_nums.contains(&443),
+        "OLD port 443 from node-a's first snapshot must NOT appear: {port_nums:?}"
+    );
+}
+
+// ─── Test 10: all_workloads ordered by total_cpu_percent DESC ─────────────────
+
+#[test]
+fn all_workloads_ordered_by_cpu_desc() {
+    let (_f, mut conn) = open_temp();
+    seed_two_node_scenario(&mut conn);
+
+    let workloads = dbhost::all_workloads(&conn).unwrap();
+
+    // node-a has 2 workloads (Ollama 30%, Claude 20%) from its NEWER snapshot
+    // node-b has 1 workload (GitServer 75%)
+    // ordered by total_cpu_percent DESC: GitServer 75 > Ollama 30 > Claude 20
+    assert_eq!(
+        workloads.len(),
+        3,
+        "should have 3 workloads total: got {workloads:?}"
+    );
+    assert_eq!(
+        workloads[0].label, "GitServer",
+        "first workload should be GitServer (highest cpu=75): got {:?}",
+        workloads[0]
+    );
+    assert!(
+        workloads[0].total_cpu_percent > workloads[1].total_cpu_percent,
+        "workloads should be ordered by cpu DESC"
+    );
+    assert!(
+        workloads[1].total_cpu_percent >= workloads[2].total_cpu_percent,
+        "workloads should be ordered by cpu DESC"
+    );
+}
+
+// ─── Test 11: latest_for_node returns newest snapshot ────────────────────────
+
+#[test]
+fn latest_for_node_returns_newest() {
+    let (_f, mut conn) = open_temp();
+    seed_two_node_scenario(&mut conn);
+
+    // node-a has 2 snapshots; latest should be the second one (higher id, newer collected_at)
+    let detail = dbhost::latest_for_node(&conn, "node-read-a")
+        .unwrap()
+        .expect("node-read-a should have a snapshot");
+
+    // The newest snapshot has collected_at "2026-06-22T12:00:00+00:00"
+    assert_eq!(
+        detail.collected_at, "2026-06-22T12:00:00+00:00",
+        "latest_for_node should return the newest snapshot, got collected_at={}",
+        detail.collected_at
+    );
+
+    // Non-existent node should return None
+    let none_result = dbhost::latest_for_node(&conn, "no-such-node").unwrap();
+    assert!(
+        none_result.is_none(),
+        "latest_for_node for unknown node should return None"
+    );
+}
+
+// ─── Test 12: ports_for_node scoped to one node ──────────────────────────────
+
+#[test]
+fn ports_for_node_scoped_to_one_node() {
+    let (_f, mut conn) = open_temp();
+    seed_two_node_scenario(&mut conn);
+
+    let ports_a = dbhost::ports_for_node(&conn, "node-read-a").unwrap();
+    let ports_b = dbhost::ports_for_node(&conn, "node-read-b").unwrap();
+
+    // node-a's newest snapshot has ports 8080, 9090 (not the old 80, 443)
+    assert_eq!(
+        ports_a.len(),
+        2,
+        "node-read-a should have 2 ports from its newest snapshot: got {ports_a:?}"
+    );
+    let a_port_nums: Vec<u16> = ports_a.iter().map(|p| p.port).collect();
+    assert!(
+        a_port_nums.contains(&8080),
+        "port 8080 must be in node-a ports"
+    );
+    assert!(
+        a_port_nums.contains(&9090),
+        "port 9090 must be in node-a ports"
+    );
+    assert!(
+        !a_port_nums.contains(&80),
+        "OLD port 80 must not be in node-a ports"
+    );
+
+    // node-b has port 22
+    assert_eq!(
+        ports_b.len(),
+        1,
+        "node-read-b should have 1 port: got {ports_b:?}"
+    );
+    assert_eq!(ports_b[0].port, 22, "node-b's port should be 22");
+
+    // Sanity: ports are node-scoped (no cross-node leakage)
+    assert!(
+        !a_port_nums.contains(&22),
+        "node-b's port 22 must not appear in node-a results"
+    );
+}
+
+// ─── Test 13: workloads_for_node scoped to one node ─────────────────────────
+
+#[test]
+fn workloads_for_node_scoped_to_one_node() {
+    let (_f, mut conn) = open_temp();
+    seed_two_node_scenario(&mut conn);
+
+    let wl_a = dbhost::workloads_for_node(&conn, "node-read-a").unwrap();
+    let wl_b = dbhost::workloads_for_node(&conn, "node-read-b").unwrap();
+
+    // node-a has 2 workloads (Ollama, Claude) from its newest snapshot
+    assert_eq!(
+        wl_a.len(),
+        2,
+        "node-read-a should have 2 workloads from newest snapshot: got {wl_a:?}"
+    );
+    let a_labels: Vec<&str> = wl_a.iter().map(|w| w.label.as_str()).collect();
+    assert!(
+        a_labels.contains(&"Ollama"),
+        "node-a workloads should contain Ollama"
+    );
+    assert!(
+        a_labels.contains(&"Claude"),
+        "node-a workloads should contain Claude"
+    );
+
+    // node-b has 1 workload (GitServer)
+    assert_eq!(
+        wl_b.len(),
+        1,
+        "node-read-b should have 1 workload: got {wl_b:?}"
+    );
+    assert_eq!(
+        wl_b[0].label, "GitServer",
+        "node-b workload should be GitServer"
+    );
+
+    // Sanity: no cross-node leakage
+    assert!(
+        !a_labels.contains(&"GitServer"),
+        "node-b's GitServer must not appear in node-a workloads"
     );
 }

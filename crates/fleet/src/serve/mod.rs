@@ -23,6 +23,10 @@ pub mod templates;
 /// the simpler [`build_router`] entrypoint (e.g. Task-16 tests).
 const DEFAULT_ONLINE_THRESHOLD: Duration = Duration::from_secs(900);
 
+/// Default snapshot staleness threshold (3 h), used by the simpler [`build_router`]
+/// entrypoint and the `full_router` test helper (spec §6.5).
+const DEFAULT_SNAPSHOT_STALE_THRESHOLD: Duration = Duration::from_secs(10_800);
+
 /// Filesystem dir holding the vendored static assets (htmx + css), served at
 /// `/static/` via `tower_http::services::ServeDir`. Checked into the repo —
 /// no CDN, no npm (spec §3.8).
@@ -53,6 +57,7 @@ pub fn build_router(db_path: PathBuf) -> Router {
     build_router_with(routes::AppState {
         db_path,
         online_threshold: DEFAULT_ONLINE_THRESHOLD,
+        snapshot_stale_threshold: DEFAULT_SNAPSHOT_STALE_THRESHOLD,
         beszel_ui_url: String::new(),
         kuma_ui_url: String::new(),
     })
@@ -79,17 +84,24 @@ pub fn build_router_with(state: routes::AppState) -> Router {
 }
 
 /// Bind and serve on `cfg.bind` (tailnet IP resolved externally; tests never
-/// call this).
+/// call this). Uses the default online and snapshot-stale thresholds.
 pub async fn run(cfg: &ServeConfig, db_path: &Path) -> anyhow::Result<()> {
-    run_with(cfg, db_path, DEFAULT_ONLINE_THRESHOLD).await
+    run_with(
+        cfg,
+        db_path,
+        DEFAULT_ONLINE_THRESHOLD,
+        DEFAULT_SNAPSHOT_STALE_THRESHOLD,
+    )
+    .await
 }
 
-/// Bind and serve with a caller-supplied online threshold (wired from
-/// `Config::online_threshold_secs`).
+/// Bind and serve with caller-supplied thresholds (wired from
+/// `Config::online_threshold_secs` and `Config::snapshot_stale_secs`).
 pub async fn run_with(
     cfg: &ServeConfig,
     db_path: &Path,
     online_threshold: Duration,
+    snapshot_stale_threshold: Duration,
 ) -> anyhow::Result<()> {
     let addr: std::net::SocketAddr = cfg
         .bind
@@ -99,6 +111,7 @@ pub async fn run_with(
     let router = build_router_with(routes::AppState {
         db_path: db_path.to_path_buf(),
         online_threshold,
+        snapshot_stale_threshold,
         beszel_ui_url: cfg.beszel_ui_url.clone(),
         kuma_ui_url: cfg.kuma_ui_url.clone(),
     });
@@ -496,6 +509,7 @@ mod tests {
         build_router_with(routes::AppState {
             db_path,
             online_threshold: Duration::from_secs(900),
+            snapshot_stale_threshold: DEFAULT_SNAPSHOT_STALE_THRESHOLD,
             beszel_ui_url: "http://intel-mini:8090".to_owned(),
             kuma_ui_url: "http://intel-mini:3001".to_owned(),
         })

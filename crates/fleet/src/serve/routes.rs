@@ -27,6 +27,9 @@ pub struct AppState {
     /// Freshness window for the **derived** `online` field (spec §3.3). The HTML
     /// views recompute online at request time rather than trusting the stored flag.
     pub online_threshold: Duration,
+    /// Age threshold after which a host snapshot is considered stale (spec §6.5).
+    /// Derived from `Config::snapshot_stale_secs` in `run_with`; defaults to 3 h.
+    pub snapshot_stale_threshold: Duration,
     /// Deep-drill-down link target for `/observability` (NOT polled — R-10).
     pub beszel_ui_url: String,
     /// Deep-drill-down link target for `/observability` (NOT polled — R-10).

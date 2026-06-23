@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Serialize, PartialEq, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct PortRow {
     pub port: u16,
     pub proto: String,
@@ -53,7 +53,7 @@ pub fn listening_ports() -> Vec<PortRow> {
     parse_listen_output(&String::from_utf8_lossy(&out.stdout))
 }
 
-#[derive(Clone, Serialize, PartialEq, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct ConnGroup {
     pub process: String,
     pub pid: u32,
@@ -92,7 +92,7 @@ pub fn established_connections() -> Vec<ConnGroup> {
     parse_estab_output(&String::from_utf8_lossy(&out.stdout))
 }
 
-#[derive(Clone, Serialize, Default, PartialEq, Debug)]
+#[derive(Clone, Serialize, Deserialize, Default, PartialEq, Debug)]
 pub struct NetIdentity {
     pub hostname: String,
     pub lan_ip: Option<String>,

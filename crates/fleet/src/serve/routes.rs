@@ -34,6 +34,9 @@ pub struct AppState {
     pub beszel_ui_url: String,
     /// Deep-drill-down link target for `/observability` (NOT polled — R-10).
     pub kuma_ui_url: String,
+    /// Curated port→service-name overrides, loaded once at startup (spec: port
+    /// service naming). Wrapped in `Arc` so `AppState` stays cheap to `Clone`.
+    pub labels: std::sync::Arc<crate::service_label::Labels>,
 }
 
 // ── format helpers ────────────────────────────────────────────────────────────

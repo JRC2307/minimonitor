@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use crate::config::Config;
+use crate::service_label::Labels;
 
 /// Start the read-only HTTP server.
 ///
@@ -14,11 +15,21 @@ pub async fn run(cfg: &Config, db_path: &Path) -> anyhow::Result<()> {
 
     let online_threshold = std::time::Duration::from_secs(cfg.online_threshold_secs);
     let snapshot_stale_threshold = std::time::Duration::from_secs(cfg.snapshot_stale_secs);
+
+    // Resolve the labels path: explicit config field, else the canonical default.
+    let labels_path = serve_cfg
+        .service_labels_path
+        .clone()
+        .unwrap_or_else(|| crate::config::expand_tilde("~/.config/fleet/service-labels.toml"));
+    // A missing file is fine (empty labels); a malformed file fails startup.
+    let labels = Labels::load(Path::new(&labels_path))?;
+
     crate::serve::run_with(
         serve_cfg,
         db_path,
         online_threshold,
         snapshot_stale_threshold,
+        labels,
     )
     .await
 }

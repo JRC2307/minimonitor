@@ -60,6 +60,7 @@ pub fn build_router(db_path: PathBuf) -> Router {
         snapshot_stale_threshold: DEFAULT_SNAPSHOT_STALE_THRESHOLD,
         beszel_ui_url: String::new(),
         kuma_ui_url: String::new(),
+        labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
     })
 }
 
@@ -96,6 +97,7 @@ pub async fn run(cfg: &ServeConfig, db_path: &Path) -> anyhow::Result<()> {
         db_path,
         DEFAULT_ONLINE_THRESHOLD,
         DEFAULT_SNAPSHOT_STALE_THRESHOLD,
+        crate::service_label::Labels::empty(),
     )
     .await
 }
@@ -107,6 +109,7 @@ pub async fn run_with(
     db_path: &Path,
     online_threshold: Duration,
     snapshot_stale_threshold: Duration,
+    labels: crate::service_label::Labels,
 ) -> anyhow::Result<()> {
     let addr: std::net::SocketAddr = cfg
         .bind
@@ -119,6 +122,7 @@ pub async fn run_with(
         snapshot_stale_threshold,
         beszel_ui_url: cfg.beszel_ui_url.clone(),
         kuma_ui_url: cfg.kuma_ui_url.clone(),
+        labels: std::sync::Arc::new(labels),
     });
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -685,6 +689,7 @@ mod tests {
             snapshot_stale_threshold: DEFAULT_SNAPSHOT_STALE_THRESHOLD,
             beszel_ui_url: "http://intel-mini:8090".to_owned(),
             kuma_ui_url: "http://intel-mini:3001".to_owned(),
+            labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
         })
     }
 

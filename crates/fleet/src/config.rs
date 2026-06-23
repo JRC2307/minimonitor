@@ -204,6 +204,10 @@ pub struct ServeConfig {
     pub beszel_ui_url: String,
     #[serde(default)]
     pub kuma_ui_url: String,
+    /// Path to the port→service-name labels TOML. `~` is expanded.
+    /// Defaults (when absent) to `~/.config/fleet/service-labels.toml`.
+    #[serde(default)]
+    pub service_labels_path: Option<String>,
 }
 
 // ─── Collect ─────────────────────────────────────────────────────────────────
@@ -275,6 +279,12 @@ pub fn load_config(path: &Path) -> anyhow::Result<Config> {
     // Tilde-expand every path field post-deserialization.
     cfg.db_path = expand_tilde(&cfg.db_path);
     cfg.export_yaml_path = expand_tilde(&cfg.export_yaml_path);
+
+    if let Some(serve) = cfg.serve.as_mut()
+        && let Some(p) = serve.service_labels_path.as_mut()
+    {
+        *p = expand_tilde(p);
+    }
 
     Ok(cfg)
 }

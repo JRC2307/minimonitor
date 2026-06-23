@@ -92,11 +92,9 @@ pub fn resolve_service(port: u16, command: Option<&str>, process: &str, labels: 
     process.to_owned()
 }
 
-/// Extract the project name from a path segment matching either
-/// `projects/<type>/<name>/…` (where `<type>` is a known [`PROJECT_TYPES`] token)
-/// or `tools/<name>/…` (the standalone tools directory).
+/// Extract the project name from the first `projects/<type>/<name>/…` segment
+/// whose `<type>` is a known [`PROJECT_TYPES`] token.
 fn project_from_command(cmd: &str) -> Option<String> {
-    // First try `projects/<type>/<name>`.
     for (idx, _) in cmd.match_indices("projects/") {
         let after = &cmd[idx + "projects/".len()..];
         let mut segs = after.split('/');
@@ -107,16 +105,6 @@ fn project_from_command(cmd: &str) -> Option<String> {
         // The name segment is bounded by the next '/'; if the path is the end of
         // an argv token, trim a trailing " --flag …" that got glued on.
         let name = segs.next().unwrap_or("");
-        let name = name.split_whitespace().next().unwrap_or("");
-        if name.is_empty() {
-            continue;
-        }
-        return Some(name.to_owned());
-    }
-    // Then try standalone `tools/<name>` (the top-level tools directory).
-    for (idx, _) in cmd.match_indices("tools/") {
-        let after = &cmd[idx + "tools/".len()..];
-        let name = after.split('/').next().unwrap_or("");
         let name = name.split_whitespace().next().unwrap_or("");
         if name.is_empty() {
             continue;
@@ -178,7 +166,10 @@ mod tests {
                 "javierr",
             ),
             ("/Users/x/projects/startup/locals/server.js", "locals"),
-            ("/Users/x/Desktop/1/tools/maintenance/run.sh", "maintenance"),
+            (
+                "/Users/x/Desktop/1/projects/tools/minibridge/app.py",
+                "minibridge",
+            ),
         ];
         for (cmd, want) in cases {
             assert_eq!(

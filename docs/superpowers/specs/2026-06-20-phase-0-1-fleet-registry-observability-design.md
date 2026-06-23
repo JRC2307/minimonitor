@@ -487,7 +487,7 @@ CREATE TABLE cf_zone (
 
 Cron ~5 min. Inputs: `[[tailnets]]`, overrides, OAuth secrets. Outputs: `node`/`node_seen` rows; rewritten `fleet.yaml`; non-zero exit on hard failure (so a wrapping hc.io check catches a dead sync).
 
-1. Open a `sync_run` row. For each `[[tailnets]]`: mint an OAuth token once — `POST https://api.tailscale.com/api/v2/oauth/token` (`client_id`, `client_secret`, `grant_type=client_credentials`) → Bearer (1h TTL, no refresh needed). Use least-privilege `devices:read`.
+1. Open a `sync_run` row. For each `[[tailnets]]`: mint an OAuth token once — `POST https://api.tailscale.com/api/v2/oauth/token` (`client_id`, `client_secret`, `grant_type=client_credentials`) → Bearer (1h TTL, no refresh needed). Use least-privilege `devices:core:read`.
 2. `GET /api/v2/tailnet/{tailnet}/devices?fields=default` per account. Deserialize `TsDevice` (camelCase), tag with source `account`. On `429` honor `Retry-After` with backoff.
 3. **Resilience:** sync is additive/upsert per account. A failed account does **not** wipe its rows — last-known rows remain and age to offline naturally. Record each succeeded account in `sync_run.accounts_ok`.
 4. Filter `isExternal` / unauthorized.

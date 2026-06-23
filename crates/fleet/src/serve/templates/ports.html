@@ -8,16 +8,17 @@
 {% else %}
 <table class="ports">
   <thead>
-    <tr><th>node</th><th>port</th><th>proto</th><th>process</th><th>pid</th><th>bind</th><th>collected</th></tr>
+    <tr><th>node</th><th>service</th><th>port</th><th>proto</th><th>process</th><th>pid</th><th>bind</th><th>collected</th></tr>
   </thead>
   <tbody>
     {% for r in rows %}
     <tr{% if r.stale %} class="stale"{% endif %}>
       <td><a href="/node/{{ r.fleet_id }}">{{ r.hostname }}</a></td>
+      <td class="service">{{ r.service }}</td>
       <td>{{ r.port }}</td>
       <td>{{ r.proto }}</td>
-      <td><code>{{ r.process }}</code></td>
-      <td>{{ r.pid }}</td>
+      <td class="muted"><code>{{ r.process }}</code></td>
+      <td class="muted">{{ r.pid }}</td>
       <td><code>{{ r.bind }}</code></td>
       <td>{{ r.collected_at }}</td>
     </tr>

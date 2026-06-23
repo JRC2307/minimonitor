@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sysinfo::{
     Disks, Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
 };
@@ -21,7 +21,7 @@ pub fn ewma_update(prev: Option<f32>, current: f32, alpha: f32) -> f32 {
 const MIN_VISIBLE_MEMORY_BYTES: u64 = 20 * 1024 * 1024;
 const LOCALHOST_REFRESH: Duration = Duration::from_secs(10);
 
-#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SortMode {
     Cpu,
@@ -39,7 +39,7 @@ impl SortMode {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ProcessRow {
     pub pid: u32,
     pub name: String,
@@ -54,13 +54,13 @@ pub struct ProcessRow {
     pub sustained_cpu: f32,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CoreUsage {
     pub index: usize,
     pub percent: f32,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DiskVolume {
     pub name: String,
     pub mount: String,
@@ -68,7 +68,7 @@ pub struct DiskVolume {
     pub available_bytes: u64,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MonitorSnapshot {
     pub total_memory_bytes: u64,
     pub used_memory_bytes: u64,

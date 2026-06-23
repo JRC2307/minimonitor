@@ -90,6 +90,7 @@ pub struct HostSnapshotView {
 pub struct FleetPortViewRow {
     pub fleet_id: String,
     pub hostname: String,
+    pub service: String, // resolved friendly name (spec: port service naming)
     pub port: u16,
     pub proto: String,
     pub process: String,

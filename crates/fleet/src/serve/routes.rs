@@ -404,20 +404,33 @@ pub async fn get_ports_html(State(state): State<AppState>) -> Response {
         Ok(r) => r,
         Err(e) => return html_500(e),
     };
+    let cmds = db::host::commands_by_pid_all(&conn).unwrap_or_default();
 
     let page = templates::PortsPage {
         rows: rows
             .into_iter()
-            .map(|r| templates::FleetPortViewRow {
-                fleet_id: r.node_id,
-                hostname: r.hostname,
-                port: r.port,
-                proto: r.proto,
-                process: r.process,
-                pid: r.pid,
-                bind: r.bind,
-                collected_at: r.collected_at.clone(),
-                stale: crate::model::is_stale(&r.collected_at, state.snapshot_stale_threshold),
+            .map(|r| {
+                let command = cmds
+                    .get(&r.node_id)
+                    .and_then(|m| m.get(&r.pid))
+                    .map(String::as_str);
+                templates::FleetPortViewRow {
+                    service: crate::service_label::resolve_service(
+                        r.port,
+                        command,
+                        &r.process,
+                        &state.labels,
+                    ),
+                    fleet_id: r.node_id,
+                    hostname: r.hostname,
+                    port: r.port,
+                    proto: r.proto,
+                    process: r.process,
+                    pid: r.pid,
+                    bind: r.bind,
+                    collected_at: r.collected_at.clone(),
+                    stale: crate::model::is_stale(&r.collected_at, state.snapshot_stale_threshold),
+                }
             })
             .collect(),
     };

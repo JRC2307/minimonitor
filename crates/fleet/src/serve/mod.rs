@@ -1116,6 +1116,44 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn ports_shows_resolved_service_name() {
+        let node = make_node("fleet-svc", "svc-host");
+        let f = seed_db(&[node]);
+        let fresh_ts = (Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
+        {
+            let conn = db::open(f.path()).unwrap();
+            let blob = r#"{"processes":[{"pid":4242,"command":"/Users/x/Desktop/1/projects/experiments/cuentas/.venv/bin/python app"}]}"#;
+            conn.execute(
+                "INSERT INTO host_snapshot
+                    (node_id, collected_at, hostname, total_cpu_percent, used_memory_bytes,
+                     total_memory_bytes, workload_count, port_count, snapshot_json)
+                 VALUES ('fleet-svc', ?1, 'svc-host', 0.0, 0, 0, 0, 1, ?2)",
+                rusqlite::params![fresh_ts, blob],
+            )
+            .unwrap();
+            let sid = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO host_port (snapshot_id, node_id, port, proto, process, pid, bind)
+                 VALUES (?1, 'fleet-svc', 8789, 'TCP', 'python3.1', 4242, '0.0.0.0')",
+                rusqlite::params![sid],
+            )
+            .unwrap();
+        }
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/ports").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains("cuentas"),
+            "resolved service name missing:\n{html}"
+        );
+        // Raw process is still shown as ground truth.
+        assert!(
+            html.contains("python3.1"),
+            "raw process should still render:\n{html}"
+        );
+    }
+
     // ── /workloads tests ──────────────────────────────────────────────────────
 
     #[tokio::test]

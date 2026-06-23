@@ -14,4 +14,5 @@ pub mod overrides;
 pub mod probe;
 pub mod secrets;
 pub mod serve;
+pub mod service_label;
 pub mod tailscale;

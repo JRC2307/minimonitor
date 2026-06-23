@@ -38,7 +38,7 @@ socket2 = "0.5"          # probe.rs self-check: open the unprivileged dgram-ICMP
 # rustls (via reqwest) remains the primary path for every HTTPS call. `cargo audit` stays
 # clean with both linked. async-only, no default features, to keep the surface minimal.
 rust_socketio = { version = "0.6.0", default-features = false, features = ["async"] }
-futures-util = { version = "0.3.32", default-features = false }
+futures-util = { version = "0.3.32", features = ["std"] }
 
 [dev-dependencies]
 wiremock = "0.6"

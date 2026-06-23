@@ -1,12 +1,13 @@
 use fleet::agent_client::AgentClient;
-use std::time::Duration;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const FIXTURE: &str = include_str!("fixtures/snapshot.json");
 
 fn client() -> AgentClient {
-    AgentClient::new(Duration::from_secs(5))
+    // No timeout argument — per spec §4.4 the single per-host bound is the
+    // tokio::time::timeout wrapper in commands/collect.rs, not reqwest-level.
+    AgentClient::new()
 }
 
 /// 200 serving the fixture → Ok((raw, snap)) with raw non-empty + snap.ports populated.

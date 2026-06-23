@@ -174,7 +174,7 @@ async fn fetch_tailnet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, TailnetConfig};
+    use crate::config::{CollectConfig, Config, TailnetConfig};
     use tempfile::tempdir;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -195,6 +195,8 @@ mod tests {
             healthchecks: None,
             probe: None,
             serve: None,
+            collect: CollectConfig::default(),
+            snapshot_stale_secs: 10_800,
         }
     }
 

@@ -163,6 +163,97 @@ kuma_ui_url = "http://100.64.0.1:3001"
     }
 }
 
+// ─── CollectConfig + snapshot_stale_secs ─────────────────────────────────────
+
+#[cfg(test)]
+mod collect_config_tests {
+    use crate::ENV_LOCK;
+    use fleet::config::load_config;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_toml(content: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        f
+    }
+
+    /// Minimal TOML with NO [collect] section — all collect fields must be defaults.
+    const NO_COLLECT_TOML: &str = r#"
+db_path = "~/.local/state/fleet/fleet.db"
+export_yaml_path = "~/Desktop/1/tools/minimonitor/fleet.yaml"
+"#;
+
+    #[test]
+    fn collect_defaults_when_section_absent() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        // SAFETY: holding ENV_LOCK serializes all env-mutating tests.
+        unsafe {
+            std::env::remove_var("FLEET_COLLECT__AGENT_PORT");
+            std::env::remove_var("FLEET_COLLECT__CONCURRENCY");
+            std::env::remove_var("FLEET_COLLECT__PER_HOST_TIMEOUT_MS");
+            std::env::remove_var("FLEET_COLLECT__RETENTION_DAYS");
+            std::env::remove_var("FLEET_COLLECT__STALE_AFTER_HOURS");
+            std::env::remove_var("FLEET_COLLECT__TOKEN_ENV");
+            std::env::remove_var("FLEET_SNAPSHOT_STALE_SECS");
+        }
+        let f = write_toml(NO_COLLECT_TOML);
+        let cfg = load_config(f.path()).expect("should parse");
+        assert_eq!(cfg.collect.agent_port, 9909);
+        assert_eq!(cfg.collect.concurrency, 8);
+        assert_eq!(cfg.collect.per_host_timeout_ms, 10_000);
+        assert_eq!(cfg.collect.retention_days, 14);
+        assert_eq!(cfg.collect.stale_after_hours, 3);
+        assert!(cfg.collect.token_env.is_none());
+        assert_eq!(cfg.snapshot_stale_secs, 10_800);
+    }
+
+    #[test]
+    fn collect_toml_field_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        // SAFETY: holding ENV_LOCK.
+        unsafe {
+            std::env::remove_var("FLEET_COLLECT__PER_HOST_TIMEOUT_MS");
+            std::env::remove_var("FLEET_SNAPSHOT_STALE_SECS");
+        }
+        const TOML: &str = r#"
+db_path = "~/.local/state/fleet/fleet.db"
+export_yaml_path = "~/Desktop/1/tools/minimonitor/fleet.yaml"
+snapshot_stale_secs = 7200
+
+[collect]
+per_host_timeout_ms = 5000
+token_env = "MY_AGENT_TOKEN"
+"#;
+        let f = write_toml(TOML);
+        let cfg = load_config(f.path()).expect("should parse");
+        assert_eq!(cfg.collect.per_host_timeout_ms, 5000);
+        assert_eq!(cfg.collect.token_env.as_deref(), Some("MY_AGENT_TOKEN"));
+        // other collect fields still default
+        assert_eq!(cfg.collect.agent_port, 9909);
+        assert_eq!(cfg.collect.concurrency, 8);
+        // top-level override
+        assert_eq!(cfg.snapshot_stale_secs, 7200);
+    }
+
+    #[test]
+    fn collect_env_override_concurrency() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        // SAFETY: holding ENV_LOCK.
+        unsafe {
+            std::env::set_var("FLEET_COLLECT__CONCURRENCY", "16");
+        }
+        let f = write_toml(NO_COLLECT_TOML);
+        let cfg = load_config(f.path()).expect("should parse");
+        unsafe {
+            std::env::remove_var("FLEET_COLLECT__CONCURRENCY");
+        }
+        assert_eq!(cfg.collect.concurrency, 16);
+        // other fields still default
+        assert_eq!(cfg.collect.agent_port, 9909);
+    }
+}
+
 // ─── Secrets ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

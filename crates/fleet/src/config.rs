@@ -31,6 +31,10 @@ pub struct Config {
     #[serde(default)]
     pub include_external: bool,
 
+    /// Seconds after which a served host snapshot is considered stale. Default 10 800 (3 h).
+    #[serde(default = "default_snapshot_stale_secs")]
+    pub snapshot_stale_secs: u64,
+
     #[serde(default)]
     pub tailnets: Vec<TailnetConfig>,
 
@@ -41,6 +45,13 @@ pub struct Config {
     pub healthchecks: Option<HealthchecksConfig>,
     pub probe: Option<ProbeConfig>,
     pub serve: Option<ServeConfig>,
+
+    #[serde(default)]
+    pub collect: CollectConfig,
+}
+
+fn default_snapshot_stale_secs() -> u64 {
+    10_800
 }
 
 fn default_threshold() -> u64 {
@@ -193,6 +204,61 @@ pub struct ServeConfig {
     pub beszel_ui_url: String,
     #[serde(default)]
     pub kuma_ui_url: String,
+}
+
+// ─── Collect ─────────────────────────────────────────────────────────────────
+
+/// Tunables for the `fleet collect` host-snapshot sweep.
+/// All fields have defaults so `[collect]` may be omitted from `fleet.toml`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectConfig {
+    /// Port the minimonitor-agent listens on on each host. Default 9909.
+    #[serde(default = "default_collect_agent_port")]
+    pub agent_port: u16,
+    /// Maximum concurrent HTTP requests during a sweep. Default 8.
+    #[serde(default = "default_collect_concurrency")]
+    pub concurrency: usize,
+    /// Per-host HTTP request timeout in milliseconds. Default 10 000.
+    #[serde(default = "default_collect_timeout_ms")]
+    pub per_host_timeout_ms: u64,
+    /// Days to keep snapshots in the database before pruning. Default 14.
+    #[serde(default = "default_collect_retention_days")]
+    pub retention_days: u32,
+    /// Hours without a fresh snapshot before a host is flagged stale. Default 3.
+    #[serde(default = "default_collect_stale_after_hours")]
+    pub stale_after_hours: u64,
+    /// Optional env-var name carrying a bearer token for agent authentication.
+    #[serde(default)]
+    pub token_env: Option<String>,
+}
+
+impl Default for CollectConfig {
+    fn default() -> Self {
+        Self {
+            agent_port: default_collect_agent_port(),
+            concurrency: default_collect_concurrency(),
+            per_host_timeout_ms: default_collect_timeout_ms(),
+            retention_days: default_collect_retention_days(),
+            stale_after_hours: default_collect_stale_after_hours(),
+            token_env: None,
+        }
+    }
+}
+
+fn default_collect_agent_port() -> u16 {
+    9909
+}
+fn default_collect_concurrency() -> usize {
+    8
+}
+fn default_collect_timeout_ms() -> u64 {
+    10_000
+}
+fn default_collect_retention_days() -> u32 {
+    14
+}
+fn default_collect_stale_after_hours() -> u64 {
+    3
 }
 
 // ─── Loader ──────────────────────────────────────────────────────────────────

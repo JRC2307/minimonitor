@@ -48,6 +48,30 @@ impl Drop for Caffeinate {
 const DISPLAYPLACER_MISSING: &str =
     "displayplacer not installed — run: brew install displayplacer";
 
+/// Homebrew install locations, searched in order. Needed because the app runs
+/// under launchd, whose PATH is just `/usr/bin:/bin:/usr/sbin:/sbin` and does
+/// not include Homebrew's bin — so a bare `displayplacer` would never resolve.
+const DISPLAYPLACER_CANDIDATES: [&str; 2] = [
+    "/opt/homebrew/bin/displayplacer", // Apple Silicon
+    "/usr/local/bin/displayplacer",    // Intel
+];
+
+/// Pick the first candidate path that exists, else fall back to the bare name
+/// (resolved via PATH — works when run from a shell or tests).
+fn resolve_bin(candidates: &[&str], bare: &str, exists: impl Fn(&str) -> bool) -> String {
+    candidates
+        .iter()
+        .find(|c| exists(c))
+        .map(|c| (*c).to_owned())
+        .unwrap_or_else(|| bare.to_owned())
+}
+
+fn displayplacer_bin() -> String {
+    resolve_bin(&DISPLAYPLACER_CANDIDATES, "displayplacer", |p| {
+        std::path::Path::new(p).exists()
+    })
+}
+
 /// A display preset matched to a RustDesk client device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayPreset {
@@ -185,7 +209,7 @@ pub fn build_apply_command(mode: &DisplayMode, preset: DisplayPreset) -> String 
 
 /// Read the current display mode via `displayplacer list`.
 pub fn current_mode() -> Result<DisplayMode, String> {
-    let output = Command::new("displayplacer")
+    let output = Command::new(displayplacer_bin())
         .arg("list")
         .output()
         .map_err(|e| {
@@ -205,7 +229,7 @@ pub fn current_mode() -> Result<DisplayMode, String> {
 pub fn apply_preset(preset: DisplayPreset) -> Result<DisplayMode, String> {
     let mode = current_mode()?;
     let arg = build_apply_command(&mode, preset);
-    let status = Command::new("displayplacer")
+    let status = Command::new(displayplacer_bin())
         .arg(&arg)
         .status()
         .map_err(|e| {
@@ -316,6 +340,26 @@ Resolutions for rotation 0:
             ..native
         };
         assert_eq!(off_list.active_preset(), None);
+    }
+
+    #[test]
+    fn resolve_bin_prefers_existing_then_falls_back() {
+        let candidates = ["/opt/homebrew/bin/displayplacer", "/usr/local/bin/displayplacer"];
+        // Only the Intel path exists.
+        assert_eq!(
+            resolve_bin(&candidates, "displayplacer", |p| p == "/usr/local/bin/displayplacer"),
+            "/usr/local/bin/displayplacer"
+        );
+        // First match wins when several exist.
+        assert_eq!(
+            resolve_bin(&candidates, "displayplacer", |_| true),
+            "/opt/homebrew/bin/displayplacer"
+        );
+        // None exist → bare name (PATH lookup).
+        assert_eq!(
+            resolve_bin(&candidates, "displayplacer", |_| false),
+            "displayplacer"
+        );
     }
 
     #[test]

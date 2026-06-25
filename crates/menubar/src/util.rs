@@ -6,11 +6,28 @@ use tao::window::Icon as TaoIcon;
 use tray_icon::Icon as TrayAppIcon;
 
 pub fn make_tray_icon() -> TrayAppIcon {
-    TrayAppIcon::from_rgba(make_icon_rgba(), 64, 64).expect("tray icon")
+    TrayAppIcon::from_rgba(make_tray_glyph_rgba(), 32, 32).expect("tray icon")
 }
 
 pub fn make_window_icon() -> TaoIcon {
     TaoIcon::from_rgba(make_icon_rgba(), 64, 64).expect("window icon")
+}
+
+/// A crisp bar-chart glyph for the menu bar: solid white bars on a transparent
+/// background. Rendered as a macOS *template* icon (see `build_tray`), so the
+/// system tints it for light/dark mode and it stays clearly visible either way.
+fn make_tray_glyph_rgba() -> Vec<u8> {
+    let s = 32usize;
+    let mut rgba = vec![0u8; s * s * 4]; // fully transparent
+    let white = [255, 255, 255, 255];
+    // Four ascending bars, evenly spaced, with a baseline.
+    let bars = [(4usize, 18usize), (11, 12), (18, 22), (25, 8)];
+    for (x, bar_h) in bars {
+        let top = 28 - bar_h;
+        fill_rect(&mut rgba, s, x, top, 5, bar_h, white);
+    }
+    fill_rect(&mut rgba, s, 3, 28, 27, 3, white); // baseline
+    rgba
 }
 
 fn make_icon_rgba() -> Vec<u8> {

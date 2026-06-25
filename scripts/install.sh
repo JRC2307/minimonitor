@@ -26,15 +26,55 @@ MODE="${1:-}"   # --fleet or empty (menubar)
 
 install_menubar() {
     APP_DIR="$_HOME/Applications/MiniMonitor"
-    BIN_DIR="$APP_DIR/bin"
-    BIN_PATH="$BIN_DIR/minimonitor"
+    # Package as a real .app bundle so the process has a stable bundle identity.
+    # macOS keys a menu-bar item's remembered position on that identity, so a
+    # bare binary lands in a different slot each launch (and gets covered by the
+    # active app's menus on the left). With a bundle, ⌘-dragging it next to the
+    # clock once makes the position persist across relaunches and reboots.
+    APP_BUNDLE="$APP_DIR/MiniMonitor.app"
+    MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
+    BIN_PATH="$MACOS_DIR/minimonitor"
+    INFO_PLIST="$APP_BUNDLE/Contents/Info.plist"
     PLIST_PATH="$_HOME/Library/LaunchAgents/com.caguabot.minimonitor.plist"
 
-    mkdir -p "$BIN_DIR" "$_HOME/Library/LaunchAgents"
+    mkdir -p "$MACOS_DIR" "$_HOME/Library/LaunchAgents"
+    # Remove the legacy bare-binary layout from earlier installs.
+    rm -rf "$APP_DIR/bin"
 
     cd "$ROOT_DIR"
     cargo build --release
     install -m 755 "$ROOT_DIR/target/release/minimonitor" "$BIN_PATH"
+
+    cat > "$INFO_PLIST" <<INFOPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>MiniMonitor</string>
+  <key>CFBundleDisplayName</key>
+  <string>MiniMonitor</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.caguabot.minimonitor</string>
+  <key>CFBundleExecutable</key>
+  <string>minimonitor</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.2.0</string>
+  <key>CFBundleVersion</key>
+  <string>0.2.0</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+</dict>
+</plist>
+INFOPLIST
+
+    # Register the bundle with Launch Services so its identity is recognised.
+    /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister \
+        -f "$APP_BUNDLE" >/dev/null 2>&1 || true
 
     cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

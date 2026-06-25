@@ -25,7 +25,14 @@ to the device being used to remote in. Tray-only — no inspector-window UI.
 |--------|------------|-------------|----------|
 | Mini native screen | `Mini screen (1920×1080)` | 1920×1080 | 0° (landscape) |
 | MacBook Air | `MacBook Air (1440×900)` | 1440×900 (16:10) | 0° (landscape) |
-| iPhone (vertical) | `iPhone portrait (1080×1920)` | 1920×1080 @ degree 90 | 90° (portrait) |
+| iPhone (vertical) | `iPhone portrait (1080×1920)` | 1080×1920 @ degree 90 | 90° (portrait) |
+
+> **Implementation note (verified on the VX2370):** for `degree:90`, displayplacer
+> matches the resolution against the *rotated* mode list, so the portrait command must
+> use `res:1080x1920` (not `res:1920x1080`). Passing the un-rotated dimensions with
+> degree 90 makes displayplacer exit non-zero (`could not find res:...`). `displayplacer
+> list` likewise reports a rotated display as `Resolution: 1080x1920 / Rotation: 90`, so
+> the same rotated dimensions drive active-preset detection.
 
 Rationale:
 - **Mini native** — full native panel resolution for working at the desk.
@@ -34,14 +41,13 @@ Rationale:
   active, the physical ViewSonic shows a sideways image; acceptable since nobody is at the
   desk when remoting from the phone.
 
-### Mode-list reconciliation (first implementation step)
+### Mode-list reconciliation (resolved)
 
-The VX2370 is a 16:9 panel, so it may not expose a 16:10 `1440×900` mode. **Before
-wiring the presets**, run `brew install displayplacer` then `displayplacer list` on the
-mini and record the actual available modes for this display. Pin each preset to the
-closest available mode. If `1440×900` is not offered, fall back to `1600×900` for the
-MacBook Air preset and note it in the menu label. The numbers in the table are the intent;
-they are reconciled against the real mode list during implementation.
+Ran `brew install displayplacer` + `displayplacer list` on the mini. The VX2370 **does**
+expose all three target modes natively: `1920x1080 hz:60` (mode 38), `1440x900 hz:60`
+(mode 32), and the rotated portrait `1080x1920` under rotation 90. No fallback needed.
+Persistent screen id: `42F51F97-F0CF-465A-A6CD-608A3D4E0DA5` (resolved at runtime, not
+hard-coded).
 
 ## Mechanism
 
@@ -52,7 +58,7 @@ and rotation cleanly; native CoreGraphics would require private APIs for rotatio
 A displayplacer apply command looks like:
 
 ```
-displayplacer "id:<persistent-screen-id> res:1920x1080 hz:60 color_depth:8 scaling:on degree:90"
+displayplacer "id:<persistent-screen-id> res:1080x1920 hz:60 color_depth:8 enabled:true scaling:off origin:(0,0) degree:90"
 ```
 
 The persistent screen id, refresh rate, and color depth are read from `displayplacer list`

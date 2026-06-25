@@ -16,6 +16,7 @@ pub fn build_tray(title: &str) -> TrayIcon {
         .with_title(title)
         .with_tooltip("MiniMonitor")
         .with_icon(make_tray_icon())
+        .with_icon_as_template(true)
         .with_menu_on_left_click(true)
         .build()
         .expect("failed to create tray icon")

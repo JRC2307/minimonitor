@@ -3,6 +3,7 @@ use tray_icon::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
 };
 
+use crate::actions::DisplayPreset;
 use crate::util::{
     format_bytes, format_bytes_pair, format_rate, make_tray_icon, slugify, truncate_name,
 };
@@ -20,7 +21,12 @@ pub fn build_tray(title: &str) -> TrayIcon {
         .expect("failed to create tray icon")
 }
 
-pub fn build_menu(snapshot: &MonitorSnapshot, sort_mode: SortMode, status: Option<&str>) -> Menu {
+pub fn build_menu(
+    snapshot: &MonitorSnapshot,
+    sort_mode: SortMode,
+    active_display: Option<DisplayPreset>,
+    status: Option<&str>,
+) -> Menu {
     let menu = Menu::new();
 
     let line1 = MenuItem::new(
@@ -62,6 +68,7 @@ pub fn build_menu(snapshot: &MonitorSnapshot, sort_mode: SortMode, status: Optio
     let ports = build_ports_submenu(snapshot);
     let processes = build_processes_submenu(snapshot);
     let ai_sub = build_ai_submenu(snapshot);
+    let display = build_display_submenu(active_display);
     let quick = build_quick_actions_submenu();
 
     let show_inspector = MenuItem::with_id("show-inspector", "Show Inspector", true, None);
@@ -99,6 +106,7 @@ pub fn build_menu(snapshot: &MonitorSnapshot, sort_mode: SortMode, status: Optio
         &ports,
         &processes,
         &ai_sub,
+        &display,
         &quick,
         &sep2,
         &show_inspector,
@@ -229,6 +237,20 @@ fn build_ports_submenu(snapshot: &MonitorSnapshot) -> Submenu {
         let kill = MenuItem::with_id(format!("kill:{}", p.pid), "Kill owner", true, None);
         let _ = child.append_items(&[&pid_item, &bind, &sep, &kill]);
         let _ = submenu.append(&child);
+    }
+    submenu
+}
+
+fn build_display_submenu(active: Option<DisplayPreset>) -> Submenu {
+    let submenu = Submenu::new("Display (RustDesk)", true);
+    for preset in DisplayPreset::ALL {
+        let label = if active == Some(preset) {
+            format!("{} •", preset.label())
+        } else {
+            preset.label().to_owned()
+        };
+        let item = MenuItem::with_id(preset.menu_id(), label, true, None);
+        let _ = submenu.append(&item);
     }
     submenu
 }

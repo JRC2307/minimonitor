@@ -22,7 +22,34 @@ pub fn render<T: Template>(tpl: &T) -> Response {
     }
 }
 
-// ── Inventory (`/`, mirrors `fleet list`) ────────────────────────────────────
+// ── Store (`/`, the caguastore launcher) ─────────────────────────────────────
+
+/// One launcher tile. `up` only matters when `has_led` is true (the app has a
+/// `port` in the catalog and can therefore be matched against host_port rows).
+pub struct StoreTile {
+    pub slug: String,
+    pub name: String,
+    pub tagline: String,
+    pub url: String,
+    /// Glyph key — already validated against the sprite; unknown keys were
+    /// mapped to `app` by the handler.
+    pub icon: String,
+    pub hue: u16,
+    pub has_led: bool,
+    pub up: bool,
+}
+
+#[derive(Template)]
+#[template(path = "store.html")]
+pub struct StorePage {
+    pub tiles: Vec<StoreTile>,
+    /// Count of catalog apps whose port shows in a fresh snapshot.
+    pub up_count: usize,
+    /// Count of catalog apps that have a liveness port at all.
+    pub led_count: usize,
+}
+
+// ── Inventory (`/inventory`, mirrors `fleet list`) ───────────────────────────
 
 /// One inventory row. `online` is **derived** (recomputed from `last_seen`
 /// freshness at request time, never the stale stored flag). `fuzzy` drives the

@@ -61,7 +61,34 @@ pub fn build_router(db_path: PathBuf) -> Router {
         beszel_ui_url: String::new(),
         kuma_ui_url: String::new(),
         labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
+        store: std::sync::Arc::new(crate::store::Catalog::builtin()),
     })
+}
+
+/// `GET /manifest.webmanifest` — PWA manifest, embedded at compile time so the
+/// route works regardless of the on-disk assets dir. Must be same-origin with
+/// scope `/` for Android "Add to Home Screen".
+async fn get_manifest() -> impl axum::response::IntoResponse {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "application/manifest+json",
+        )],
+        include_str!("../../assets/manifest.webmanifest"),
+    )
+}
+
+/// `GET /sw.js` — service worker. MUST be served from the origin root: a SW's
+/// maximum scope is its script's directory, and the launcher scope is `/`.
+async fn get_sw() -> impl axum::response::IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/javascript"),
+            // Let the browser recheck the SW promptly on deploys.
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("../../assets/sw.js"),
+    )
 }
 
 /// Build the full Axum router from an explicit [`routes::AppState`]: the four
@@ -69,8 +96,13 @@ pub fn build_router(db_path: PathBuf) -> Router {
 /// vendored static assets at `/static/` (`tower_http::services::ServeDir`).
 pub fn build_router_with(state: routes::AppState) -> Router {
     Router::new()
+        // caguastore launcher — the landing page; the monitor lives one level down
+        .route("/", get(routes::get_store))
+        .route("/store", get(routes::get_store))
+        .route("/manifest.webmanifest", get(get_manifest))
+        .route("/sw.js", get(get_sw))
         // HTML views (askama, server-rendered)
-        .route("/", get(routes::get_index))
+        .route("/inventory", get(routes::get_index))
         .route("/node/{id}", get(routes::get_node_html))
         .route("/paths", get(routes::get_paths_html))
         .route("/ports", get(routes::get_ports_html))
@@ -98,6 +130,7 @@ pub async fn run(cfg: &ServeConfig, db_path: &Path) -> anyhow::Result<()> {
         DEFAULT_ONLINE_THRESHOLD,
         DEFAULT_SNAPSHOT_STALE_THRESHOLD,
         crate::service_label::Labels::empty(),
+        crate::store::Catalog::builtin(),
     )
     .await
 }
@@ -110,6 +143,7 @@ pub async fn run_with(
     online_threshold: Duration,
     snapshot_stale_threshold: Duration,
     labels: crate::service_label::Labels,
+    store: crate::store::Catalog,
 ) -> anyhow::Result<()> {
     let addr: std::net::SocketAddr = cfg
         .bind
@@ -123,6 +157,7 @@ pub async fn run_with(
         beszel_ui_url: cfg.beszel_ui_url.clone(),
         kuma_ui_url: cfg.kuma_ui_url.clone(),
         labels: std::sync::Arc::new(labels),
+        store: std::sync::Arc::new(store),
     });
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -690,6 +725,7 @@ mod tests {
             beszel_ui_url: "http://intel-mini:8090".to_owned(),
             kuma_ui_url: "http://intel-mini:3001".to_owned(),
             labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
+            store: std::sync::Arc::new(crate::store::Catalog::builtin()),
         })
     }
 
@@ -711,7 +747,7 @@ mod tests {
 
         let f = seed_db(&[alpha, zeta]);
         let router = full_router(f.path().to_path_buf());
-        let (status, html) = html_get(router, "/").await;
+        let (status, html) = html_get(router, "/inventory").await;
 
         assert_eq!(status, StatusCode::OK, "body: {html}");
         // Both hostnames present.
@@ -728,7 +764,7 @@ mod tests {
     async fn index_partial_returns_table_only() {
         let f = seed_db(&[make_node("fleet-01", "alpha")]);
         let router = full_router(f.path().to_path_buf());
-        let (status, html) = html_get(router, "/?partial=1").await;
+        let (status, html) = html_get(router, "/inventory?partial=1").await;
         assert_eq!(status, StatusCode::OK);
         // Fragment: a <table>, but NOT the full document shell.
         assert!(html.contains("<table"), "partial should contain the table");
@@ -736,6 +772,136 @@ mod tests {
             !html.contains("<html"),
             "partial must be a fragment, not the full page:\n{html}"
         );
+    }
+
+    // ── caguastore launcher (`/`) ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn store_is_the_landing_page() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(html.contains("caguastore"), "brand missing:\n{html}");
+        // Built-in catalog tiles render.
+        assert!(html.contains("cuentas"), "cuentas tile missing:\n{html}");
+        assert!(html.contains("poker"), "poker tile missing:\n{html}");
+        // The system dock links back into the monitor views.
+        assert!(html.contains("/inventory"), "dock inventory link missing");
+        assert!(html.contains("/observability"), "dock obs link missing");
+    }
+
+    #[tokio::test]
+    async fn store_alias_route_serves_launcher() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/store").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(html.contains("caguastore"));
+    }
+
+    #[tokio::test]
+    async fn store_led_up_when_port_fresh() {
+        // Seed a fresh snapshot exposing cuentas' port (8789) → its tile is "up".
+        let node = make_node("fleet-store", "caguaserver");
+        let f = seed_db(&[node]);
+        seed_host_snapshot(
+            f.path(),
+            "fleet-store",
+            &Utc::now().to_rfc3339(),
+            0,
+            vec![(8789, "TCP", "python3", 42, "0.0.0.0")],
+            vec![],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains(r#"data-slug="cuentas""#),
+            "cuentas tile missing:\n{html}"
+        );
+        // The cuentas anchor carries the `up` class; apps with no fresh port are `down`.
+        let cuentas_tile = html
+            .split("<a class=\"")
+            .find(|chunk| chunk.contains(r#"data-slug="cuentas""#))
+            .expect("cuentas tile chunk");
+        let class_end = cuentas_tile.find('"').unwrap();
+        assert!(
+            cuentas_tile[..class_end].contains("up"),
+            "cuentas should be up, classes: {}",
+            &cuentas_tile[..class_end]
+        );
+        assert!(html.contains("1/"), "up-count rollup missing:\n{html}");
+    }
+
+    #[tokio::test]
+    async fn store_stale_port_reads_down() {
+        let node = make_node("fleet-store2", "caguaserver");
+        let f = seed_db(&[node]);
+        let old_ts = (Utc::now() - chrono::Duration::hours(4)).to_rfc3339();
+        seed_host_snapshot(
+            f.path(),
+            "fleet-store2",
+            &old_ts,
+            0,
+            vec![(8789, "TCP", "python3", 42, "0.0.0.0")],
+            vec![],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/").await;
+        assert_eq!(status, StatusCode::OK);
+        let cuentas_tile = html
+            .split("<a class=\"")
+            .find(|chunk| chunk.contains(r#"data-slug="cuentas""#))
+            .expect("cuentas tile chunk");
+        let class_end = cuentas_tile.find('"').unwrap();
+        assert!(
+            cuentas_tile[..class_end].contains("down"),
+            "stale port must read down, classes: {}",
+            &cuentas_tile[..class_end]
+        );
+    }
+
+    // ── PWA plumbing ─────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn manifest_served_with_correct_type() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let req = Request::builder()
+            .uri("/manifest.webmanifest")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ct = resp.headers()[axum::http::header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(ct.contains("manifest"), "wrong content-type: {ct}");
+        let body = to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("manifest is valid JSON");
+        assert_eq!(v["scope"], "/", "scope must be / for the launcher PWA");
+        assert_eq!(v["display"], "standalone");
+    }
+
+    #[tokio::test]
+    async fn service_worker_served_from_root() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/sw.js").await;
+        assert_eq!(status, StatusCode::OK);
+        let txt = String::from_utf8_lossy(&body);
+        assert!(txt.contains("caches"), "sw.js should use CacheStorage");
+    }
+
+    #[tokio::test]
+    async fn store_css_asset_served() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/static/store.css").await;
+        assert_eq!(status, StatusCode::OK, "store.css should be served");
+        assert!(!body.is_empty());
     }
 
     // ── node_page_renders_detail ─────────────────────────────────────────────

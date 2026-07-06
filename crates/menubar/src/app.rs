@@ -8,6 +8,7 @@ use tao::{
 };
 use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconEvent, menu::MenuEvent};
 
+use crate::actions::DisplayPreset;
 use crate::inspector::{self, FilterState, InspectorCommand, InspectorWindow};
 use crate::tray;
 use crate::util::percentage;
@@ -83,6 +84,7 @@ struct AppState {
     inspector: Option<InspectorWindow>,
     filters: FilterState,
     caffeinate: crate::actions::Caffeinate,
+    display_preset: Option<DisplayPreset>,
 }
 
 impl AppState {
@@ -100,6 +102,9 @@ impl AppState {
             inspector: None,
             filters: FilterState::default(),
             caffeinate: crate::actions::Caffeinate::new(),
+            display_preset: crate::actions::current_mode()
+                .ok()
+                .and_then(|m| m.active_preset()),
         }
     }
 
@@ -142,7 +147,12 @@ impl AppState {
 
     fn menu(&self) -> tray_icon::menu::Menu {
         let snapshot = self.presentation.as_ref().unwrap_or(&self.live);
-        tray::build_menu(snapshot, self.sort_mode, self.status_message.as_deref())
+        tray::build_menu(
+            snapshot,
+            self.sort_mode,
+            self.display_preset,
+            self.status_message.as_deref(),
+        )
     }
 
     fn handle_tray(&mut self, event: TrayIconEvent) {
@@ -195,6 +205,17 @@ impl AppState {
                     Ok(()) => "Flushed DNS cache".to_owned(),
                     Err(e) => format!("Flush DNS failed: {e}"),
                 });
+            }
+            _ if id.starts_with("display:") => {
+                if let Some(preset) = DisplayPreset::from_menu_id(id) {
+                    self.status_message = Some(match crate::actions::apply_preset(preset) {
+                        Ok(mode) => {
+                            self.display_preset = mode.active_preset();
+                            format!("Display → {}", preset.label())
+                        }
+                        Err(e) => format!("Display change failed: {e}"),
+                    });
+                }
             }
             _ if id.starts_with("kill:") => {
                 if let Some(pid) = tray::parse_pid_suffix(id, "kill:") {

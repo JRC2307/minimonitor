@@ -44,13 +44,59 @@ pub fn parse_listen_output(output: &str) -> Vec<PortRow> {
 }
 
 pub fn listening_ports() -> Vec<PortRow> {
-    let Ok(out) = Command::new("lsof")
+    let mut rows = match Command::new("lsof")
         .args(["-nP", "-iTCP", "-sTCP:LISTEN"])
         .output()
-    else {
-        return Vec::new();
+    {
+        Ok(out) => parse_listen_output(&String::from_utf8_lossy(&out.stdout)),
+        Err(_) => Vec::new(),
     };
-    parse_listen_output(&String::from_utf8_lossy(&out.stdout))
+
+    // Linux: unprivileged lsof cannot see sockets owned by other users (e.g.
+    // root's docker-proxy), so container ports vanish from snapshots. `ss -ltn`
+    // lists every listening socket regardless of owner — merge in the ports
+    // lsof missed, with an unknown process (pid 0).
+    if cfg!(target_os = "linux")
+        && let Ok(out) = Command::new("ss").args(["-ltnH"]).output()
+    {
+        let seen: std::collections::HashSet<u16> = rows.iter().map(|r| r.port).collect();
+        rows.extend(
+            parse_ss_listen_output(&String::from_utf8_lossy(&out.stdout))
+                .into_iter()
+                .filter(|r| !seen.contains(&r.port)),
+        );
+    }
+
+    rows
+}
+
+/// Parse `ss -ltnH` output (no header). Columns:
+/// `State Recv-Q Send-Q Local-Address:Port Peer-Address:Port [Process]`
+/// Only the local address:port is trusted; the owning process is unknown
+/// without root, so `process` is `"?"` and `pid` 0.
+pub fn parse_ss_listen_output(output: &str) -> Vec<PortRow> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 5 || parts[0] != "LISTEN" {
+                return None;
+            }
+            let (addr, port_str) = parts[3].rsplit_once(':')?;
+            let port: u16 = port_str.parse().ok()?;
+            let bind = match addr {
+                "" | "*" | "0.0.0.0" | "[::]" => "*".to_owned(),
+                a => a.trim_start_matches('[').trim_end_matches(']').to_owned(),
+            };
+            Some(PortRow {
+                port,
+                proto: "TCP".to_owned(),
+                process: "?".to_owned(),
+                pid: 0,
+                bind,
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -230,6 +276,37 @@ pub fn validate_tailnet_bind(bind: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── parse_ss_listen_output ───────────────────────────────────────────────
+
+    #[test]
+    fn ss_listen_parses_docker_proxy_rows() {
+        let out = "\
+LISTEN 0      4096                100.119.198.54:8082       0.0.0.0:*
+LISTEN 0      4096                100.119.198.54:8090       0.0.0.0:*
+LISTEN 0      511                        0.0.0.0:80          0.0.0.0:*
+LISTEN 0      4096                          [::]:23231          [::]:*
+";
+        let rows = parse_ss_listen_output(out);
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0].port, 8082);
+        assert_eq!(rows[0].bind, "100.119.198.54");
+        assert_eq!(rows[0].process, "?");
+        assert_eq!(rows[0].pid, 0);
+        assert_eq!(rows[2].bind, "*", "0.0.0.0 normalizes to *");
+        assert_eq!(rows[3].port, 23231);
+        assert_eq!(rows[3].bind, "*", "[::] normalizes to *");
+    }
+
+    #[test]
+    fn ss_listen_skips_garbage_and_headers() {
+        let out = "\
+State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process
+ESTAB  0      0      1.2.3.4:5          6.7.8.9:10
+not a row
+";
+        assert!(parse_ss_listen_output(out).is_empty());
+    }
 
     // ── is_cgnat ─────────────────────────────────────────────────────────────
 

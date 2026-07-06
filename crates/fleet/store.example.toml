@@ -8,7 +8,8 @@ slug = "poker-helper"
 name = "poker"
 tagline = "odds sidekick"
 url = "http://caguaserver.tail82f3c6.ts.net:3013"
-port = 3013     # liveness LED: matched against fresh host_port rows
+port = 3013            # liveness LED: matched against fresh host_port rows
+host = "caguaserver"   # optional: only match rows from this node (substring)
 icon = "spade"
 hue = 350       # tile accent hue, 0-360
 

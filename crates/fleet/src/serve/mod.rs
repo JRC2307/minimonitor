@@ -803,11 +803,13 @@ mod tests {
     #[tokio::test]
     async fn store_led_up_when_port_fresh() {
         // Seed a fresh snapshot exposing cuentas' port (8789) → its tile is "up".
-        let node = make_node("fleet-store", "caguaserver");
+        // NB: seed_host_snapshot writes node_id into the snapshot hostname column,
+        // and the builtin catalog matches host "caguaserver" — so the id must match.
+        let node = make_node("caguaserver", "caguaserver");
         let f = seed_db(&[node]);
         seed_host_snapshot(
             f.path(),
-            "fleet-store",
+            "caguaserver",
             &Utc::now().to_rfc3339(),
             0,
             vec![(8789, "TCP", "python3", 42, "0.0.0.0")],
@@ -832,6 +834,35 @@ mod tests {
             &cuentas_tile[..class_end]
         );
         assert!(html.contains("1/"), "up-count rollup missing:\n{html}");
+    }
+
+    #[tokio::test]
+    async fn store_port_on_wrong_host_reads_down() {
+        // Port 8789 fresh on a NON-caguaserver node must not light cuentas
+        // (builtin catalog pins host = "caguaserver").
+        let node = make_node("fleet-mac", "js-mac-mini");
+        let f = seed_db(&[node]);
+        seed_host_snapshot(
+            f.path(),
+            "fleet-mac",
+            &Utc::now().to_rfc3339(),
+            0,
+            vec![(8789, "TCP", "python3", 42, "0.0.0.0")],
+            vec![],
+        );
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/").await;
+        assert_eq!(status, StatusCode::OK);
+        let cuentas_tile = html
+            .split("<a class=\"")
+            .find(|chunk| chunk.contains(r#"data-slug="cuentas""#))
+            .expect("cuentas tile chunk");
+        let class_end = cuentas_tile.find('"').unwrap();
+        assert!(
+            cuentas_tile[..class_end].contains("down"),
+            "port on another host must not light the tile, classes: {}",
+            &cuentas_tile[..class_end]
+        );
     }
 
     #[tokio::test]

@@ -34,6 +34,11 @@ pub struct StoreApp {
     /// Listening port used for the liveness LED (None → no LED).
     #[serde(default)]
     pub port: Option<u16>,
+    /// Hostname (substring, case-insensitive) the app runs on. When set, the
+    /// LED only matches port rows from that node — prevents an unrelated
+    /// process on another fleet host from lighting the tile. None → any node.
+    #[serde(default)]
+    pub host: Option<String>,
     /// Glyph key into the inline SVG sprite in `store.html`. Unknown keys fall
     /// back to the `app` glyph at render time.
     #[serde(default = "default_icon")]
@@ -89,6 +94,7 @@ impl Catalog {
                 tagline: tagline.to_owned(),
                 url: format!("{HOST}:{port}"),
                 port: Some(port),
+                host: Some("caguaserver".to_owned()),
                 icon: icon.to_owned(),
                 hue,
             }

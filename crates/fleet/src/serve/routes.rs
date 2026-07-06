@@ -247,7 +247,8 @@ fn inventory_rows(
 /// Glyph keys present in the `store.html` sprite. A catalog entry with any
 /// other `icon` value renders the generic `app` glyph instead of a broken ref.
 const STORE_ICONS: &[&str] = &[
-    "spade", "mountain", "hold", "cap", "kanban", "coin", "pulse", "gauge", "bell", "app",
+    "spade", "mountain", "hold", "cap", "kanban", "coin", "pulse", "gauge", "bell", "app", "term",
+    "code", "mesh",
 ];
 
 /// The launcher home screen. Liveness LED per app: its catalog `port` appears

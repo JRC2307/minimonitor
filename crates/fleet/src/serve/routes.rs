@@ -37,6 +37,9 @@ pub struct AppState {
     /// Curated port→service-name overrides, loaded once at startup (spec: port
     /// service naming). Wrapped in `Arc` so `AppState` stays cheap to `Clone`.
     pub labels: std::sync::Arc<crate::service_label::Labels>,
+    /// The caguastore app catalog (built-in default or `store.toml` override),
+    /// loaded once at startup.
+    pub store: std::sync::Arc<crate::store::Catalog>,
 }
 
 // ── format helpers ────────────────────────────────────────────────────────────
@@ -239,7 +242,64 @@ fn inventory_rows(
         .collect())
 }
 
-// ── GET / (inventory, mirrors `fleet list`) ──────────────────────────────────
+// ── GET / (caguastore launcher) ──────────────────────────────────────────────
+
+/// Glyph keys present in the `store.html` sprite. A catalog entry with any
+/// other `icon` value renders the generic `app` glyph instead of a broken ref.
+const STORE_ICONS: &[&str] = &[
+    "spade", "mountain", "hold", "cap", "kanban", "coin", "pulse", "gauge", "bell", "app",
+];
+
+/// The launcher home screen. Liveness LED per app: its catalog `port` appears
+/// in a **non-stale** host_port row (any node — every catalog app lives on
+/// caguaserver today; revisit if apps spread across hosts).
+pub async fn get_store(State(state): State<AppState>) -> Response {
+    let conn = match ro_conn(&state) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+
+    // Fresh listening ports across the fleet.
+    let fresh_ports: std::collections::HashSet<u16> = db::host::all_ports(&conn)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|r| !crate::model::is_stale(&r.collected_at, state.snapshot_stale_threshold))
+        .map(|r| r.port)
+        .collect();
+
+    let tiles: Vec<templates::StoreTile> = state
+        .store
+        .apps
+        .iter()
+        .map(|a| {
+            let icon = if STORE_ICONS.contains(&a.icon.as_str()) {
+                a.icon.clone()
+            } else {
+                "app".to_owned()
+            };
+            templates::StoreTile {
+                slug: a.slug.clone(),
+                name: a.name.clone(),
+                tagline: a.tagline.clone(),
+                url: a.url.clone(),
+                icon,
+                hue: a.hue,
+                has_led: a.port.is_some(),
+                up: a.port.is_some_and(|p| fresh_ports.contains(&p)),
+            }
+        })
+        .collect();
+
+    let led_count = tiles.iter().filter(|t| t.has_led).count();
+    let up_count = tiles.iter().filter(|t| t.up).count();
+    templates::render(&templates::StorePage {
+        tiles,
+        up_count,
+        led_count,
+    })
+}
+
+// ── GET /inventory (mirrors `fleet list`) ────────────────────────────────────
 
 /// `?partial=1` returns just the `<table>` fragment for HTMX `hx-get` refresh.
 pub async fn get_index(

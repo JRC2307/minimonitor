@@ -24,12 +24,21 @@ pub async fn run(cfg: &Config, db_path: &Path) -> anyhow::Result<()> {
     // A missing file is fine (empty labels); a malformed file fails startup.
     let labels = Labels::load(Path::new(&labels_path))?;
 
+    // caguastore catalog: explicit path, else the canonical default. A missing
+    // file falls back to the built-in catalog; a malformed file fails startup.
+    let store_path = serve_cfg
+        .store_path
+        .clone()
+        .unwrap_or_else(|| crate::config::expand_tilde("~/.config/fleet/store.toml"));
+    let store = crate::store::Catalog::load(Path::new(&store_path))?;
+
     crate::serve::run_with(
         serve_cfg,
         db_path,
         online_threshold,
         snapshot_stale_threshold,
         labels,
+        store,
     )
     .await
 }

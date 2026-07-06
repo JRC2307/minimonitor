@@ -1,0 +1,211 @@
+/* caguastore — pocket-OS launcher. Phone-first, dark ink, per-app hue tiles.
+   Self-contained: no external fonts, no CDN (repo rule). */
+
+:root {
+  --ink: #0b0d12;
+  --ink-2: #10131b;
+  --fg: #dfe5ec;
+  --muted: #6d7686;
+  --line: #1e2430;
+  --up: #4ec07a;
+  --down: #3a4150;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body { height: 100%; }
+
+body.store {
+  margin: 0;
+  color: var(--fg);
+  font: 15px/1.4 ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+  background:
+    radial-gradient(120% 90% at 50% -10%, #141a26 0%, var(--ink) 55%),
+    var(--ink);
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 1.4rem)
+    1.1rem
+    calc(env(safe-area-inset-bottom, 0px) + 1rem);
+  overflow-x: hidden;
+}
+
+/* film grain — two offset repeating gradients, cheap on old GPUs */
+.grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 2px, #fff 2px 3px),
+    repeating-linear-gradient(90deg, transparent 0 3px, #000 3px 5px);
+  mix-blend-mode: overlay;
+}
+
+/* ── header: wordmark + big clock, like a phone lock line ─────────────────── */
+
+.os-head { text-align: center; margin-bottom: 1.6rem; }
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  font-size: 0.8rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.wordmark .dot {
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 30%;
+  background: linear-gradient(140deg, #5aa9e6, #4ec07a);
+  box-shadow: 0 0 8px #5aa9e688;
+}
+
+.clock {
+  font-size: clamp(3rem, 16vw, 4.6rem);
+  font-weight: 200;
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  margin-top: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.date { color: var(--muted); font-size: 0.95rem; margin-top: 0.1rem; }
+
+.sys {
+  display: inline-block;
+  margin-top: 0.7rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.28em 0.9em;
+  background: #ffffff08;
+}
+
+/* ── app grid ─────────────────────────────────────────────────────────────── */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.3rem 0.8rem;
+  max-width: 620px;
+  width: 100%;
+  margin: 0 auto;
+  flex: 1;
+  align-content: start;
+}
+@media (min-width: 480px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 900px) { .grid { grid-template-columns: repeat(5, 1fr); max-width: 860px; } }
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-decoration: none;
+  color: var(--fg);
+  animation: pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  animation-delay: calc(var(--i) * 45ms);
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.85); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tile { animation: none; }
+}
+
+.squircle {
+  position: relative;
+  width: min(100%, 4.6rem);
+  aspect-ratio: 1;
+  border-radius: 27%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(155deg, hsl(var(--h) 42% 17%), hsl(var(--h) 55% 9%));
+  border: 1px solid hsl(var(--h) 45% 26%);
+  box-shadow:
+    inset 0 1px 0 hsl(var(--h) 60% 40% / 0.35),
+    0 6px 16px -8px hsl(var(--h) 70% 8%);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.tile:active .squircle { transform: scale(0.9); }
+.tile:hover .squircle {
+  box-shadow:
+    inset 0 1px 0 hsl(var(--h) 60% 45% / 0.4),
+    0 0 18px -4px hsl(var(--h) 80% 55% / 0.5);
+}
+
+.glyph {
+  width: 52%;
+  height: 52%;
+  color: hsl(var(--h) 85% 72%);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* liveness LED, bottom-right of the squircle */
+.led {
+  position: absolute;
+  right: 7%;
+  bottom: 7%;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  background: var(--down);
+}
+.tile.up .led { background: var(--up); box-shadow: 0 0 6px var(--up); }
+.tile.down .squircle { filter: saturate(0.35) brightness(0.75); }
+.tile.down .label { color: var(--muted); }
+
+.label { font-size: 0.82rem; letter-spacing: 0.02em; }
+.tag {
+  font-size: 0.62rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  margin-top: -0.25rem;
+  text-align: center;
+}
+
+/* ── system dock (monitor views) ──────────────────────────────────────────── */
+
+.dock {
+  margin: 1.8rem auto 0;
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 1.4rem;
+  border: 1px solid var(--line);
+  background: #ffffff0a;
+  backdrop-filter: blur(6px);
+}
+.dock a {
+  width: 2.9rem;
+  height: 2.9rem;
+  border-radius: 1rem;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.dock a:hover, .dock a:active { color: var(--fg); background: #ffffff10; }
+.dock svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

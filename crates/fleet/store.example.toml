@@ -1,0 +1,22 @@
+# caguastore catalog override — copy to ~/.config/fleet/store.toml (or set
+# [serve] store_path in fleet.toml). If the file is absent, `fleet serve` uses
+# the built-in catalog (the caguaserver apps). Icons: spade, mountain, hold,
+# cap, kanban, coin, pulse, gauge, bell, app (fallback).
+
+[[app]]
+slug = "poker-helper"
+name = "poker"
+tagline = "odds sidekick"
+url = "http://caguaserver.tail82f3c6.ts.net:3013"
+port = 3013     # liveness LED: matched against fresh host_port rows
+icon = "spade"
+hue = 350       # tile accent hue, 0-360
+
+[[app]]
+slug = "cuentas"
+name = "cuentas"
+tagline = "facturas & money"
+url = "http://caguaserver.tail82f3c6.ts.net:8789"
+port = 8789
+icon = "coin"
+hue = 45

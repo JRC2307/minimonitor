@@ -15,4 +15,5 @@ pub mod probe;
 pub mod secrets;
 pub mod serve;
 pub mod service_label;
+pub mod store;
 pub mod tailscale;

@@ -3,15 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}fleet{% endblock %}</title>
+  <title>{% block title %}caguastore{% endblock %}</title>
+  <meta name="theme-color" content="#0f1115">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js" defer></script>
 </head>
 <body>
   <header class="topbar">
-    <span class="brand">fleet</span>
+    <a class="brand" href="/">caguastore</a>
     <nav>
-      <a href="/">inventory</a>
+      <a href="/inventory">inventory</a>
       <a href="/paths">paths</a>
       <a href="/ports">ports</a>
       <a href="/workloads">workloads</a>

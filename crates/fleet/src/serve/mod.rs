@@ -789,6 +789,20 @@ mod tests {
         // The system dock links back into the monitor views.
         assert!(html.contains("/inventory"), "dock inventory link missing");
         assert!(html.contains("/observability"), "dock obs link missing");
+        // Remote-work tiles.
+        assert!(html.contains("terminal"), "ttyd tile missing:\n{html}");
+        assert!(html.contains("opencode"), "opencode tile missing:\n{html}");
+        // The tailscale tile is portless: no LED, no up/down class.
+        let ts_tile = html
+            .split("<a class=\"")
+            .find(|chunk| chunk.contains(r#"data-slug="tailscale""#))
+            .expect("tailscale tile chunk");
+        let class_end = ts_tile.find('"').unwrap();
+        assert_eq!(&ts_tile[..class_end], "tile", "portless tile must be bare");
+        assert!(
+            !ts_tile[..ts_tile.find("</a>").unwrap()].contains("class=\"led\""),
+            "portless tile must not render an LED"
+        );
     }
 
     #[tokio::test]

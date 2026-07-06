@@ -1,7 +1,7 @@
 # caguastore catalog override — copy to ~/.config/fleet/store.toml (or set
 # [serve] store_path in fleet.toml). If the file is absent, `fleet serve` uses
 # the built-in catalog (the caguaserver apps). Icons: spade, mountain, hold,
-# cap, kanban, coin, pulse, gauge, bell, app (fallback).
+# cap, kanban, coin, pulse, gauge, bell, term, code, mesh, app (fallback).
 
 [[app]]
 slug = "poker-helper"

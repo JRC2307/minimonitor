@@ -128,6 +128,17 @@ impl Catalog {
                     265,
                 ),
                 srv("cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
+                // calendario binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
+                StoreApp {
+                    slug: "calendario".to_owned(),
+                    name: "calendario".to_owned(),
+                    tagline: "agenda self-hosted".to_owned(),
+                    url: "https://caguaserver.tail82f3c6.ts.net:8791".to_owned(),
+                    port: Some(8791),
+                    host: Some("caguaserver".to_owned()),
+                    icon: "calendar".to_owned(),
+                    hue: 38,
+                },
                 srv("uptime-kuma", "kuma", "uptime checks", 3001, "pulse", 130),
                 srv("beszel", "beszel", "host metrics", 8090, "gauge", 190),
                 srv("ntfy", "ntfy", "push notifs", 8082, "bell", 320),

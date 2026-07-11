@@ -128,6 +128,20 @@ impl Catalog {
                     265,
                 ),
                 srv("cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
+                srv("vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
+                srv("portfolio", "portfolio", "inversiones", 3010, "chart", 95),
+                srv("polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
+                // brief page binds via tailscale serve — HTTPS like calendario
+                StoreApp {
+                    slug: "brief".to_owned(),
+                    name: "brief".to_owned(),
+                    tagline: "panel del día".to_owned(),
+                    url: "https://caguaserver.tail82f3c6.ts.net:8092".to_owned(),
+                    port: Some(8092),
+                    host: Some("caguaserver".to_owned()),
+                    icon: "sun".to_owned(),
+                    hue: 15,
+                },
                 // calendario binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
                 StoreApp {
                     slug: "calendario".to_owned(),
@@ -146,6 +160,18 @@ impl Catalog {
                 mac("ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
                 mac("opencode-web", "opencode", "web ui", 4096, "code", 175),
                 mac("ttyd-opencode", "oc·term", "opencode tty", 7682, "term", 85),
+                // external — public Cloudflare Workers site, no port/LED
+                // (flip url to https://lds.javierr.com once its DNS record exists)
+                StoreApp {
+                    slug: "manos".to_owned(),
+                    name: "manos".to_owned(),
+                    tagline: "aprende LSM".to_owned(),
+                    url: "https://lds-javierr.jrckc23.workers.dev".to_owned(),
+                    port: None,
+                    host: None,
+                    icon: "hand".to_owned(),
+                    hue: 330,
+                },
                 // external console — no port, no LED
                 StoreApp {
                     slug: "tailscale".to_owned(),

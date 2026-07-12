@@ -13,6 +13,7 @@
 //! port = 3013          # optional — matched against fresh host_port rows for the LED
 //! icon = "spade"       # key into the built-in SVG glyph set (see store.html sprite)
 //! hue = 350            # tile accent hue, 0–360
+//! category = "apps"    # optional section header on the launcher; defaults to "apps"
 //! ```
 //!
 //! Liveness is read-time only: an app whose `port` appears in a **non-stale**
@@ -46,6 +47,10 @@ pub struct StoreApp {
     /// Tile accent hue (0–360).
     #[serde(default = "default_hue")]
     pub hue: u16,
+    /// Launcher section this tile renders under. Sections appear in catalog
+    /// order (first tile of a category fixes that category's position).
+    #[serde(default = "default_category")]
+    pub category: String,
 }
 
 fn default_icon() -> String {
@@ -53,6 +58,9 @@ fn default_icon() -> String {
 }
 fn default_hue() -> u16 {
     210
+}
+fn default_category() -> String {
+    "apps".to_owned()
 }
 
 /// The full catalog.
@@ -85,11 +93,13 @@ impl Catalog {
     }
 
     /// The built-in catalog: the caguaserver apps plus the remote-work tools
-    /// on the Mac mini, all reachable over the tailnet.
+    /// on the Mac mini, all reachable over the tailnet. Grouped into launcher
+    /// sections via `category` — sections render in catalog order.
     pub fn builtin() -> Catalog {
         const SERVER: &str = "http://caguaserver.tail82f3c6.ts.net";
         const MAC: &str = "http://js-mac-mini.tail82f3c6.ts.net";
-        let app = |slug: &str,
+        let app = |cat: &str,
+                   slug: &str,
                    name: &str,
                    tagline: &str,
                    base: &str,
@@ -105,33 +115,28 @@ impl Catalog {
             host: Some(host.to_owned()),
             icon: icon.to_owned(),
             hue,
+            category: cat.to_owned(),
         };
-        let srv = |slug: &str, name: &str, tagline: &str, port: u16, icon: &str, hue: u16| {
-            app(slug, name, tagline, SERVER, "caguaserver", port, icon, hue)
+        let srv = |cat: &str,
+                   slug: &str,
+                   name: &str,
+                   tagline: &str,
+                   port: u16,
+                   icon: &str,
+                   hue: u16| {
+            app(cat, slug, name, tagline, SERVER, "caguaserver", port, icon, hue)
         };
         // Mac snapshots report hostname "Js-Mac-mini.local" — "mac" matches.
-        let mac = |slug: &str, name: &str, tagline: &str, port: u16, icon: &str, hue: u16| {
-            app(slug, name, tagline, MAC, "mac", port, icon, hue)
-        };
+        let mac = |cat: &str,
+                   slug: &str,
+                   name: &str,
+                   tagline: &str,
+                   port: u16,
+                   icon: &str,
+                   hue: u16| { app(cat, slug, name, tagline, MAC, "mac", port, icon, hue) };
         Catalog {
             apps: vec![
-                srv("poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
-                srv("crag-finder", "crag", "find climbing", 3014, "mountain", 150),
-                srv("crux-playground", "crux", "playground", 3012, "hold", 25),
-                srv("iprep", "iprep", "interview prep", 3011, "cap", 210),
-                srv(
-                    "command-center",
-                    "backlog",
-                    "command center",
-                    8787,
-                    "kanban",
-                    265,
-                ),
-                srv("cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
-                srv("vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
-                srv("dilo", "dilo", "aprende idiomas", 8793, "speech", 220),
-                srv("portfolio", "portfolio", "inversiones", 3010, "chart", 95),
-                srv("polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
+                // ── daily — the things opened every day ──────────────────────
                 // brief page binds via tailscale serve — HTTPS like calendario
                 StoreApp {
                     slug: "brief".to_owned(),
@@ -142,6 +147,7 @@ impl Catalog {
                     host: Some("caguaserver".to_owned()),
                     icon: "sun".to_owned(),
                     hue: 15,
+                    category: "daily".to_owned(),
                 },
                 // calendario binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
                 StoreApp {
@@ -153,14 +159,38 @@ impl Catalog {
                     host: Some("caguaserver".to_owned()),
                     icon: "calendar".to_owned(),
                     hue: 38,
+                    category: "daily".to_owned(),
                 },
-                srv("uptime-kuma", "kuma", "uptime checks", 3001, "pulse", 130),
-                srv("beszel", "beszel", "host metrics", 8090, "gauge", 190),
-                srv("ntfy", "ntfy", "push notifs", 8082, "bell", 320),
-                // remote-work tools (Mac mini over the tailnet)
-                mac("ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
-                mac("opencode-web", "opencode", "web ui", 4096, "code", 175),
-                mac("ttyd-opencode", "oc·term", "opencode tty", 7682, "term", 85),
+                srv(
+                    "daily",
+                    "command-center",
+                    "backlog",
+                    "command center",
+                    8787,
+                    "kanban",
+                    265,
+                ),
+                srv("daily", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
+                srv("daily", "vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
+                // dilo va por tailscale serve HTTPS — requisito del service worker (PWA)
+                StoreApp {
+                    slug: "dilo".to_owned(),
+                    name: "dilo".to_owned(),
+                    tagline: "aprende idiomas".to_owned(),
+                    url: "https://caguaserver.tail82f3c6.ts.net:8793".to_owned(),
+                    port: Some(8793),
+                    host: Some("caguaserver".to_owned()),
+                    icon: "speech".to_owned(),
+                    hue: 220,
+                    category: "daily".to_owned(),
+                },
+                // ── apps — products & experiments ────────────────────────────
+                srv("apps", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
+                srv("apps", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
+                srv("apps", "crux-playground", "crux", "playground", 3012, "hold", 25),
+                srv("apps", "iprep", "iprep", "interview prep", 3011, "cap", 210),
+                srv("apps", "portfolio", "portfolio", "inversiones", 3010, "chart", 95),
+                srv("apps", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
                 // external — public Cloudflare Workers site, no port/LED
                 // (flip url to https://lds.javierr.com once its DNS record exists)
                 StoreApp {
@@ -172,7 +202,16 @@ impl Catalog {
                     host: None,
                     icon: "hand".to_owned(),
                     hue: 330,
+                    category: "apps".to_owned(),
                 },
+                // ── dev — remote-work tools (Mac mini over the tailnet) ──────
+                mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
+                mac("dev", "opencode-web", "opencode", "web ui", 4096, "code", 175),
+                mac("dev", "ttyd-opencode", "oc·term", "opencode tty", 7682, "term", 85),
+                // ── infra — monitoring & plumbing ────────────────────────────
+                srv("infra", "uptime-kuma", "kuma", "uptime checks", 3001, "pulse", 130),
+                srv("infra", "beszel", "beszel", "host metrics", 8090, "gauge", 190),
+                srv("infra", "ntfy", "ntfy", "push notifs", 8082, "bell", 320),
                 // external console — no port, no LED
                 StoreApp {
                     slug: "tailscale".to_owned(),
@@ -183,6 +222,7 @@ impl Catalog {
                     host: None,
                     icon: "mesh".to_owned(),
                     hue: 200,
+                    category: "infra".to_owned(),
                 },
             ],
         }
@@ -232,6 +272,7 @@ port = 1
         assert_eq!(cat.apps[0].slug, "only-one");
         assert_eq!(cat.apps[0].icon, "app", "icon should default");
         assert_eq!(cat.apps[0].hue, 210, "hue should default");
+        assert_eq!(cat.apps[0].category, "apps", "category should default");
     }
 
     #[test]

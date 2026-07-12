@@ -129,6 +129,7 @@ impl Catalog {
                 ),
                 srv("cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
                 srv("vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
+                srv("dilo", "dilo", "aprende idiomas", 8793, "speech", 220),
                 srv("portfolio", "portfolio", "inversiones", 3010, "chart", 95),
                 srv("polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
                 // brief page binds via tailscale serve — HTTPS like calendario

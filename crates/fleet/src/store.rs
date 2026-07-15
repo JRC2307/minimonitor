@@ -149,6 +149,18 @@ impl Catalog {
                     hue: 15,
                     category: "daily".to_owned(),
                 },
+                // genealogy binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
+                StoreApp {
+                    slug: "genealogy".to_owned(),
+                    name: "genealogy".to_owned(),
+                    tagline: "arbol familiar".to_owned(),
+                    url: "https://caguaserver.tail82f3c6.ts.net:3015".to_owned(),
+                    port: Some(3015),
+                    host: Some("caguaserver".to_owned()),
+                    icon: "mesh".to_owned(),
+                    hue: 200,
+                    category: "apps".to_owned(),
+                },
                 // calendario binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
                 StoreApp {
                     slug: "calendario".to_owned(),
@@ -172,6 +184,7 @@ impl Catalog {
                 ),
                 srv("daily", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
                 srv("daily", "vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
+                srv("daily", "depas", "depas", "depas CDMX", 8794, "house", 160),
                 // dilo va por tailscale serve HTTPS — requisito del service worker (PWA)
                 StoreApp {
                     slug: "dilo".to_owned(),

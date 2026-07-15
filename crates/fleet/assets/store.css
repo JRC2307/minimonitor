@@ -88,20 +88,46 @@ body.store {
   background: #ffffff08;
 }
 
-/* ── app grid ─────────────────────────────────────────────────────────────── */
+/* ── categorized app grid ─────────────────────────────────────────────────── */
+
+.cats {
+  display: flex;
+  flex-direction: column;
+  gap: 1.9rem;
+  max-width: 620px;
+  width: 100%;
+  margin: 0 auto;
+  flex: 1;
+}
+@media (min-width: 900px) { .cats { max-width: 860px; } }
+
+/* section header — tiny label with a hairline running to the right edge */
+.cat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  margin: 0 0 0.95rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cat-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line), transparent);
+}
 
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1.3rem 0.8rem;
-  max-width: 620px;
-  width: 100%;
-  margin: 0 auto;
-  flex: 1;
   align-content: start;
 }
 @media (min-width: 480px) { .grid { grid-template-columns: repeat(4, 1fr); } }
-@media (min-width: 900px) { .grid { grid-template-columns: repeat(5, 1fr); max-width: 860px; } }
+@media (min-width: 900px) { .grid { grid-template-columns: repeat(5, 1fr); } }
 
 .tile {
   display: flex;

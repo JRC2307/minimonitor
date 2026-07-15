@@ -37,12 +37,21 @@ pub struct StoreTile {
     pub hue: u16,
     pub has_led: bool,
     pub up: bool,
+    /// Global tile index across all groups — drives the entrance-animation
+    /// stagger, which should flow through the whole page, not restart per group.
+    pub idx: usize,
+}
+
+/// One launcher section: a category header plus its tiles, in catalog order.
+pub struct StoreGroup {
+    pub title: String,
+    pub tiles: Vec<StoreTile>,
 }
 
 #[derive(Template)]
 #[template(path = "store.html")]
 pub struct StorePage {
-    pub tiles: Vec<StoreTile>,
+    pub groups: Vec<StoreGroup>,
     /// Count of catalog apps whose port shows in a fresh snapshot.
     pub up_count: usize,
     /// Count of catalog apps that have a liveness port at all.

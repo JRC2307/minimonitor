@@ -248,7 +248,7 @@ fn inventory_rows(
 /// other `icon` value renders the generic `app` glyph instead of a broken ref.
 const STORE_ICONS: &[&str] = &[
     "spade", "mountain", "hold", "cap", "kanban", "coin", "pulse", "gauge", "bell", "app", "term",
-    "code", "mesh", "calendar", "plane", "chart", "bot", "sun", "hand", "speech",
+    "code", "mesh", "calendar", "plane", "chart", "bot", "sun", "hand", "speech", "house",
 ];
 
 /// The launcher home screen. Liveness LED per app: its catalog `port` appears
@@ -269,38 +269,46 @@ pub async fn get_store(State(state): State<AppState>) -> Response {
         .map(|r| (r.hostname.to_lowercase(), r.port))
         .collect();
 
-    let tiles: Vec<templates::StoreTile> = state
-        .store
-        .apps
-        .iter()
-        .map(|a| {
-            let icon = if STORE_ICONS.contains(&a.icon.as_str()) {
-                a.icon.clone()
-            } else {
-                "app".to_owned()
-            };
-            templates::StoreTile {
-                slug: a.slug.clone(),
-                name: a.name.clone(),
-                tagline: a.tagline.clone(),
-                url: a.url.clone(),
-                icon,
-                hue: a.hue,
-                has_led: a.port.is_some(),
-                up: a.port.is_some_and(|p| {
-                    let host = a.host.as_deref().map(str::to_lowercase);
-                    fresh_ports.iter().any(|(h, port)| {
-                        *port == p && host.as_deref().is_none_or(|needle| h.contains(needle))
-                    })
-                }),
-            }
-        })
-        .collect();
+    // Group tiles into launcher sections by catalog `category`, preserving
+    // catalog order (a category's position = its first tile's position).
+    let mut groups: Vec<templates::StoreGroup> = Vec::new();
+    let mut led_count = 0;
+    let mut up_count = 0;
+    for (idx, a) in state.store.apps.iter().enumerate() {
+        let icon = if STORE_ICONS.contains(&a.icon.as_str()) {
+            a.icon.clone()
+        } else {
+            "app".to_owned()
+        };
+        let tile = templates::StoreTile {
+            slug: a.slug.clone(),
+            name: a.name.clone(),
+            tagline: a.tagline.clone(),
+            url: a.url.clone(),
+            icon,
+            hue: a.hue,
+            has_led: a.port.is_some(),
+            up: a.port.is_some_and(|p| {
+                let host = a.host.as_deref().map(str::to_lowercase);
+                fresh_ports.iter().any(|(h, port)| {
+                    *port == p && host.as_deref().is_none_or(|needle| h.contains(needle))
+                })
+            }),
+            idx,
+        };
+        led_count += usize::from(tile.has_led);
+        up_count += usize::from(tile.up);
+        match groups.iter_mut().find(|g| g.title == a.category) {
+            Some(g) => g.tiles.push(tile),
+            None => groups.push(templates::StoreGroup {
+                title: a.category.clone(),
+                tiles: vec![tile],
+            }),
+        }
+    }
 
-    let led_count = tiles.iter().filter(|t| t.has_led).count();
-    let up_count = tiles.iter().filter(|t| t.up).count();
     templates::render(&templates::StorePage {
-        tiles,
+        groups,
         up_count,
         led_count,
     })

@@ -197,6 +197,18 @@ impl Catalog {
                     hue: 220,
                     category: "daily".to_owned(),
                 },
+                // gastos binds loopback → tailscale serve HTTPS, explicit URL
+                StoreApp {
+                    slug: "gastos".to_owned(),
+                    name: "gastos".to_owned(),
+                    tagline: "expense tracker".to_owned(),
+                    url: "https://caguaserver.tail82f3c6.ts.net:8795".to_owned(),
+                    port: Some(8795),
+                    host: Some("caguaserver".to_owned()),
+                    icon: "coin".to_owned(),
+                    hue: 5,
+                    category: "daily".to_owned(),
+                },
                 // ── apps — products & experiments ────────────────────────────
                 srv("apps", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
                 srv("apps", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),

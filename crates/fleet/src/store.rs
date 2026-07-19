@@ -239,12 +239,11 @@ impl Catalog {
                 srv("apps", "portfolio", "portfolio", "inversiones", 3010, "chart", 95),
                 srv("apps", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
                 // external — public Cloudflare Workers site, no port/LED
-                // (flip url to https://lds.javierr.com once its DNS record exists)
                 StoreApp {
                     slug: "manos".to_owned(),
                     name: "manos".to_owned(),
                     tagline: "aprende LSM".to_owned(),
-                    url: "https://lds-javierr.jrckc23.workers.dev".to_owned(),
+                    url: "https://lds.javierr.com".to_owned(),
                     port: None,
                     host: None,
                     icon: "hand".to_owned(),

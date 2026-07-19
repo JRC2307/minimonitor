@@ -6,8 +6,8 @@
 //! `PathType`) so the unstable surface never leaks past this module.
 //!
 //! Three concerns live here, only the first touches trippy:
-//!   1. `trace()` — build a `trippy_core::Tracer` (unprivileged + Classic + ICMP,
-//!      v4-only) with a startup socket self-check, run `cfg.cycles` rounds, and
+//!   1. `trace()` — build a `trippy_core::Tracer` (platform [`PRIVILEGE_MODE`] +
+//!      Classic + ICMP, v4-only) with a startup socket self-check, run `cfg.cycles` rounds, and
 //!      `aggregate()` the snapshot into `Vec<HopStat>`.
 //!   2. `aggregate()` — pure: `trippy_core::State` → `Vec<HopStat>`.
 //!   3. `evaluate()` / `severity()` — PURE alert policy, destination-hop-only
@@ -174,9 +174,18 @@ pub trait SocketChecker {
     fn can_open(&self, target: IpAddr) -> anyhow::Result<()>;
 }
 
-/// Production socket checker: actually attempts to open a `SOCK_DGRAM` /
-/// `IPPROTO_ICMP` v4 socket (the same family trippy's unprivileged mode uses).
-/// On macOS this succeeds for unprivileged users; if the OS refuses, we fail
+/// Trippy privilege mode per platform. macOS supports unprivileged dgram-ICMP
+/// tracing; Linux dgram-ICMP sockets reject `IP_HDRINCL` (which trippy sets),
+/// so tracing there needs `Privileged` raw sockets — grant `CAP_NET_RAW`
+/// (e.g. systemd `AmbientCapabilities=CAP_NET_RAW` on the probe unit).
+#[cfg(target_os = "linux")]
+pub const PRIVILEGE_MODE: trippy_core::PrivilegeMode = trippy_core::PrivilegeMode::Privileged;
+#[cfg(not(target_os = "linux"))]
+pub const PRIVILEGE_MODE: trippy_core::PrivilegeMode = trippy_core::PrivilegeMode::Unprivileged;
+
+/// Production socket checker: actually attempts to open the same ICMP v4
+/// socket family trippy will use on this platform (`SOCK_DGRAM` on macOS,
+/// `SOCK_RAW` on Linux — see [`PRIVILEGE_MODE`]). If the OS refuses, we fail
 /// loudly rather than silently producing empty traces (R-6).
 pub struct RealSocketChecker;
 
@@ -186,14 +195,20 @@ impl SocketChecker for RealSocketChecker {
         if target.is_ipv6() {
             anyhow::bail!("probe is v4-only for Phase 1; refusing IPv6 target {target}");
         }
-        // SOCK_DGRAM + IPPROTO_ICMP is the unprivileged ICMP path; if the OS
-        // denies it we cannot trace, so surface a loud error now.
-        Socket::new(Domain::IPV4, Type::DGRAM, Some(SockProto::ICMPV4)).map_err(|e| {
-            anyhow::anyhow!(
-                "cannot open unprivileged dgram-ICMP socket (probe needs SOCK_DGRAM/IPPROTO_ICMP, \
-                 no root): {e}"
-            )
-        })?;
+        // Match trippy's socket family for PRIVILEGE_MODE; if the OS denies it
+        // we cannot trace, so surface a loud error now.
+        #[cfg(target_os = "linux")]
+        let (ty, hint) = (
+            Type::RAW,
+            "raw-ICMP socket (probe needs CAP_NET_RAW on Linux)",
+        );
+        #[cfg(not(target_os = "linux"))]
+        let (ty, hint) = (
+            Type::DGRAM,
+            "unprivileged dgram-ICMP socket (SOCK_DGRAM/IPPROTO_ICMP, no root)",
+        );
+        Socket::new(Domain::IPV4, ty, Some(SockProto::ICMPV4))
+            .map_err(|e| anyhow::anyhow!("cannot open {hint}: {e}"))?;
         Ok(())
     }
 }
@@ -219,7 +234,7 @@ pub fn build_tracer(
     }
 
     let tracer = trippy_core::Builder::new(target)
-        .privilege_mode(trippy_core::PrivilegeMode::Unprivileged)
+        .privilege_mode(PRIVILEGE_MODE)
         .multipath_strategy(trippy_core::MultipathStrategy::Classic)
         .protocol(trippy_core::Protocol::Icmp)
         .max_rounds(Some(cycles))

@@ -10,12 +10,16 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{any, get},
+};
 use rusqlite::{Connection, OpenFlags};
 use tower_http::services::ServeDir;
 
 use crate::config::ServeConfig;
 
+pub mod hub;
 pub mod routes;
 pub mod templates;
 
@@ -62,6 +66,11 @@ pub fn build_router(db_path: PathBuf) -> Router {
         kuma_ui_url: String::new(),
         labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
         store: std::sync::Arc::new(crate::store::Catalog::builtin()),
+        http: reqwest::Client::new(),
+        cc_url: "http://127.0.0.1:8787".to_owned(),
+        cuentas_url: "http://127.0.0.1:8789".to_owned(),
+        hermeshub_url: "http://127.0.0.1:8796".to_owned(),
+        money_pin: None,
     })
 }
 
@@ -99,8 +108,14 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         // caguastore launcher — the landing page; the monitor lives one level down
         .route("/", get(routes::get_store))
         .route("/store", get(routes::get_store))
+        .route("/board", get(routes::get_board))
         .route("/manifest.webmanifest", get(get_manifest))
         .route("/sw.js", get(get_sw))
+        // `/hub/*` proxy to sibling loopback services (method policy enforced
+        // inside the handlers; disallowed methods get a JSON 405).
+        .route("/hub/cc/{*rest}", any(hub::hub_cc))
+        .route("/hub/cuentas/{*rest}", any(hub::hub_cuentas))
+        .route("/hub/hermes/{*rest}", any(hub::hub_hermes))
         // HTML views (askama, server-rendered)
         .route("/inventory", get(routes::get_index))
         .route("/node/{id}", get(routes::get_node_html))
@@ -158,6 +173,11 @@ pub async fn run_with(
         kuma_ui_url: cfg.kuma_ui_url.clone(),
         labels: std::sync::Arc::new(labels),
         store: std::sync::Arc::new(store),
+        http: reqwest::Client::new(),
+        cc_url: cfg.cc_url.clone(),
+        cuentas_url: cfg.cuentas_url.clone(),
+        hermeshub_url: cfg.hermeshub_url.clone(),
+        money_pin: cfg.money_pin.clone(),
     });
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -726,6 +746,11 @@ mod tests {
             kuma_ui_url: "http://intel-mini:3001".to_owned(),
             labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
             store: std::sync::Arc::new(crate::store::Catalog::builtin()),
+            http: reqwest::Client::new(),
+            cc_url: "http://127.0.0.1:1".to_owned(),
+            cuentas_url: "http://127.0.0.1:1".to_owned(),
+            hermeshub_url: "http://127.0.0.1:1".to_owned(),
+            money_pin: Some("4242".to_owned()),
         })
     }
 
@@ -1456,6 +1481,253 @@ mod tests {
             html.contains("stale"),
             "stale class missing in workload row:\n{html}"
         );
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  /hub/* proxy + /board (caguastore super-app)
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// Router with the cc upstream pointed at `cc_url` (other upstreams dead).
+    fn hub_router(db_path: PathBuf, cc_url: &str) -> Router {
+        build_router_with(routes::AppState {
+            db_path,
+            online_threshold: Duration::from_secs(900),
+            snapshot_stale_threshold: DEFAULT_SNAPSHOT_STALE_THRESHOLD,
+            beszel_ui_url: String::new(),
+            kuma_ui_url: String::new(),
+            labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
+            store: std::sync::Arc::new(crate::store::Catalog::builtin()),
+            http: reqwest::Client::new(),
+            cc_url: cc_url.to_owned(),
+            cuentas_url: cc_url.to_owned(),
+            hermeshub_url: "http://127.0.0.1:1".to_owned(),
+            money_pin: Some("4242".to_owned()),
+        })
+    }
+
+    async fn oneshot_method(
+        router: Router,
+        method: &str,
+        uri: &str,
+        body: &str,
+    ) -> (StatusCode, Vec<u8>) {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_owned()))
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        let status = resp.status();
+        let body = to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        (status, body.to_vec())
+    }
+
+    /// Spawn a tiny stub upstream returning canned JSON; returns its base URL.
+    async fn spawn_stub_upstream() -> String {
+        use axum::routing::{get, post};
+        let app = Router::new()
+            .route(
+                "/api/summary",
+                get(|| async { axum::Json(serde_json::json!({"ok": true, "kind": "summary"})) }),
+            )
+            .route(
+                "/api/tasks/{id}",
+                post(|body: String| async move {
+                    axum::Json(serde_json::json!({"patched": true, "body": body}))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn hub_cc_get_proxies_to_upstream() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, body) = oneshot_get(router, "/hub/cc/summary").await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["kind"], "summary");
+    }
+
+    #[tokio::test]
+    async fn hub_cc_post_proxies_body() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, body) =
+            oneshot_method(router, "POST", "/hub/cc/tasks/42", r#"{"status":"done"}"#).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["patched"], true);
+        assert!(
+            v["body"].as_str().unwrap().contains("done"),
+            "JSON body must pass through: {v}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hub_cc_rejects_put() {
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), "http://127.0.0.1:1");
+        let (status, _) = oneshot_method(router, "PUT", "/hub/cc/tasks/42", "{}").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn hub_cuentas_and_hermes_are_get_only() {
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), "http://127.0.0.1:1");
+        // With a valid pin the method policy still rejects non-GET.
+        let req = Request::builder()
+            .method("POST")
+            .uri("/hub/cuentas/summary")
+            .header("x-money-pin", "4242")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from("{}"))
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        let (status, _) = oneshot_method(router.clone(), "DELETE", "/hub/hermes/channels", "").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn hub_cuentas_requires_money_pin() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+
+        // No header → 401. Wrong pin → 401. Right pin → 200 with upstream body.
+        for (pin, want) in [
+            (None, StatusCode::UNAUTHORIZED),
+            (Some("0000"), StatusCode::UNAUTHORIZED),
+            (Some("4242"), StatusCode::OK),
+        ] {
+            let router = hub_router(f.path().to_path_buf(), &base);
+            let mut req = Request::builder().uri("/hub/cuentas/summary");
+            if let Some(p) = pin {
+                req = req.header("x-money-pin", p);
+            }
+            let resp = router
+                .oneshot(req.body(axum::body::Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), want, "pin case {pin:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn hub_cuentas_disabled_without_configured_pin() {
+        let f = seed_db(&[]);
+        let mut router = hub_router(f.path().to_path_buf(), "http://127.0.0.1:1");
+        // Rebuild with money_pin unset.
+        router = build_router_with(routes::AppState {
+            db_path: f.path().to_path_buf(),
+            online_threshold: Duration::from_secs(900),
+            snapshot_stale_threshold: DEFAULT_SNAPSHOT_STALE_THRESHOLD,
+            beszel_ui_url: String::new(),
+            kuma_ui_url: String::new(),
+            labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
+            store: std::sync::Arc::new(crate::store::Catalog::builtin()),
+            http: reqwest::Client::new(),
+            cc_url: "http://127.0.0.1:1".to_owned(),
+            cuentas_url: "http://127.0.0.1:1".to_owned(),
+            hermeshub_url: "http://127.0.0.1:1".to_owned(),
+            money_pin: None,
+        });
+        let req = Request::builder()
+            .uri("/hub/cuentas/summary")
+            .header("x-money-pin", "anything")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "proxy must be off");
+    }
+
+    #[tokio::test]
+    async fn store_private_tiles_render_locked() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/").await;
+        assert_eq!(status, StatusCode::OK);
+        let cuentas_tile = html
+            .split("<a class=\"")
+            .find(|chunk| chunk.contains(r#"data-slug="cuentas""#))
+            .expect("cuentas tile chunk");
+        let class_end = cuentas_tile.find('"').unwrap();
+        assert!(
+            cuentas_tile[..class_end].contains("priv"),
+            "cuentas must be private, classes: {}",
+            &cuentas_tile[..class_end]
+        );
+        // No money numbers are server-rendered anywhere on the page.
+        assert!(html.contains("i-lock"), "lock glyph missing");
+    }
+
+    #[tokio::test]
+    async fn hub_unreachable_upstream_returns_502_json() {
+        let f = seed_db(&[]);
+        // Port 1 is never listening → connection refused → graceful 502.
+        let router = hub_router(f.path().to_path_buf(), "http://127.0.0.1:1");
+        let (status, body) = oneshot_get(router, "/hub/cc/summary").await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        let v: serde_json::Value =
+            serde_json::from_slice(&body).expect("502 body must be valid JSON");
+        assert!(v["error"].is_string(), "error key missing: {v}");
+    }
+
+    #[tokio::test]
+    async fn board_page_renders_shell() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/board").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(html.contains("board"), "board shell missing:\n{html}");
+        assert!(
+            html.contains("in_progress"),
+            "in_progress column missing:\n{html}"
+        );
+        assert!(
+            html.contains("/static/board.js"),
+            "board.js script missing:\n{html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn store_has_search_and_now_strip() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+        let (status, html) = html_get(router, "/").await;
+        assert_eq!(status, StatusCode::OK, "body: {html}");
+        assert!(
+            html.contains(r#"id="q""#),
+            "search input missing:\n{html}"
+        );
+        assert!(
+            html.contains(r#"id="now-strip""#),
+            "now-strip missing:\n{html}"
+        );
+        assert!(
+            html.contains("/static/store.js"),
+            "store.js script missing:\n{html}"
+        );
+        assert!(html.contains("/board"), "board link missing:\n{html}");
     }
 
     // ── /node/{id} host snapshot tests ───────────────────────────────────────

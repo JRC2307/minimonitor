@@ -21,3 +21,10 @@ url = "http://caguaserver.tail82f3c6.ts.net:8789"
 port = 8789
 icon = "coin"
 hue = 45
+
+# Money-facing apps can be marked private — the tile renders locked (blurred,
+# no navigation) until the session is unlocked with the money PIN:
+#   private = true
+# The PIN itself lives in fleet.toml:
+#   [serve]
+#   money_pin = "1234"   # gates /hub/cuentas/* (X-Money-Pin header); unset = proxy disabled

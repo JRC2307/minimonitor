@@ -213,6 +213,31 @@ pub struct ServeConfig {
     /// falls back to the built-in catalog.
     #[serde(default)]
     pub store_path: Option<String>,
+    /// Command Center base URL for the `/hub/cc/*` proxy (loopback in prod —
+    /// fleet-serve runs on the same host).
+    #[serde(default = "default_cc_url")]
+    pub cc_url: String,
+    /// cuentas base URL for the `/hub/cuentas/*` proxy (GET only).
+    #[serde(default = "default_cuentas_url")]
+    pub cuentas_url: String,
+    /// hermeshub base URL for the `/hub/hermes/*` proxy (GET only).
+    #[serde(default = "default_hermeshub_url")]
+    pub hermeshub_url: String,
+    /// PIN gating the `/hub/cuentas/*` money proxy (header `X-Money-Pin`).
+    /// Unset → the money proxy is disabled entirely (money numbers never leave
+    /// the server). Server-enforced — the UI lock is only presentation.
+    #[serde(default)]
+    pub money_pin: Option<String>,
+}
+
+fn default_cc_url() -> String {
+    "http://127.0.0.1:8787".to_owned()
+}
+fn default_cuentas_url() -> String {
+    "http://127.0.0.1:8789".to_owned()
+}
+fn default_hermeshub_url() -> String {
+    "http://127.0.0.1:8796".to_owned()
 }
 
 // ─── Collect ─────────────────────────────────────────────────────────────────

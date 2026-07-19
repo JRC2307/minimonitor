@@ -40,6 +40,17 @@ pub struct AppState {
     /// The caguastore app catalog (built-in default or `store.toml` override),
     /// loaded once at startup.
     pub store: std::sync::Arc<crate::store::Catalog>,
+    /// Shared HTTP client for the `/hub/*` proxy (reqwest clients are cheap to
+    /// clone — internal Arc).
+    pub http: reqwest::Client,
+    /// Command Center base URL (`/hub/cc/*` upstream).
+    pub cc_url: String,
+    /// cuentas base URL (`/hub/cuentas/*` upstream).
+    pub cuentas_url: String,
+    /// hermeshub base URL (`/hub/hermes/*` upstream).
+    pub hermeshub_url: String,
+    /// PIN for the money proxy (`X-Money-Pin` header). None → proxy disabled.
+    pub money_pin: Option<String>,
 }
 
 // ── format helpers ────────────────────────────────────────────────────────────
@@ -294,6 +305,7 @@ pub async fn get_store(State(state): State<AppState>) -> Response {
                     *port == p && host.as_deref().is_none_or(|needle| h.contains(needle))
                 })
             }),
+            private: a.private,
             idx,
         };
         led_count += usize::from(tile.has_led);
@@ -312,6 +324,14 @@ pub async fn get_store(State(state): State<AppState>) -> Response {
         up_count,
         led_count,
     })
+}
+
+// ── GET /board (kanban over the Command Center) ──────────────────────────────
+
+/// The task board — a static shell; all data flows through `/hub/cc/*` from
+/// the browser (the Command Center stays the single source of truth).
+pub async fn get_board() -> Response {
+    templates::render(&templates::BoardPage {})
 }
 
 // ── GET /inventory (mirrors `fleet list`) ────────────────────────────────────

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>board · caguastore</title>
+  <meta name="theme-color" content="#0b0d12">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="stylesheet" href="/static/store.css">
+</head>
+<body class="store board-page">
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="board-head">
+    <a class="board-back" href="/" title="home" aria-label="back to caguastore">
+      <svg viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+    </a>
+    <div class="wordmark"><span class="dot"></span>board</div>
+    <div class="board-sub" id="board-sub">command center</div>
+  </header>
+
+  <div class="cmd board-cmd">
+    <span class="cmd-prompt" aria-hidden="true">&#10095;</span>
+    <input id="bq" type="text" placeholder="filter cards" autocomplete="off"
+           autocapitalize="off" spellcheck="false" aria-label="filter cards">
+    <button class="cmd-clear" id="bq-clear" aria-label="clear filter" hidden>&times;</button>
+  </div>
+
+  <nav class="chips" id="chips" aria-label="project filter">
+    <button class="chip on" data-project="all">all</button>
+  </nav>
+
+  <main class="board" id="board" aria-busy="true">
+    <section class="col" data-status="backlog">
+      <header class="col-head"><span class="col-dot"></span>backlog <span class="col-n" id="n-backlog"></span></header>
+      <div class="col-cards" id="col-backlog"></div>
+      <button class="col-add" data-status="backlog">+ add</button>
+    </section>
+    <section class="col" data-status="in_progress">
+      <header class="col-head"><span class="col-dot"></span>in progress <span class="col-n" id="n-in_progress"></span></header>
+      <div class="col-cards" id="col-in_progress"></div>
+      <button class="col-add" data-status="in_progress">+ add</button>
+    </section>
+    <section class="col" data-status="done">
+      <header class="col-head"><span class="col-dot"></span>done <span class="col-n" id="n-done"></span></header>
+      <div class="col-cards" id="col-done"></div>
+      <button class="col-add" data-status="done">+ add</button>
+    </section>
+  </main>
+
+  <p class="board-status" id="board-status">loading the command center…</p>
+
+  <!-- quick-add sheet -->
+  <div class="sheet-veil" id="sheet-veil" hidden></div>
+  <form class="sheet" id="add-sheet" hidden>
+    <div class="sheet-title">new task → <span id="sheet-col">backlog</span></div>
+    <input id="add-title" type="text" placeholder="task title" autocomplete="off" required>
+    <select id="add-project" required></select>
+    <div class="sheet-row">
+      <button type="button" class="btn ghost" id="add-cancel">cancel</button>
+      <button type="submit" class="btn" id="add-save">add</button>
+    </div>
+  </form>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/static/board.js" defer></script>
+</body>
+</html>

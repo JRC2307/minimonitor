@@ -1,9 +1,12 @@
 /* caguastore service worker — cache the launcher shell so the home screen
    opens instantly (and offline) on the phone. Bump VERSION on asset changes. */
-var VERSION = 'caguastore-v1';
+var VERSION = 'caguastore-v2';
 var SHELL = [
   '/',
+  '/board',
   '/static/store.css',
+  '/static/store.js',
+  '/static/board.js',
   '/static/app.css',
   '/static/htmx.min.js',
   '/static/icons/favicon.svg',
@@ -31,6 +34,9 @@ self.addEventListener('activate', function (e) {
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
   if (url.origin !== location.origin || e.request.method !== 'GET') return;
+
+  // Live data proxy — never cache, never serve the HTML shell as a fallback.
+  if (url.pathname.indexOf('/hub/') === 0) return;
 
   // Static assets: cache-first (they only change with a deploy + VERSION bump).
   if (url.pathname.indexOf('/static/') === 0) {

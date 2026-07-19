@@ -51,6 +51,10 @@ pub struct StoreApp {
     /// order (first tile of a category fixes that category's position).
     #[serde(default = "default_category")]
     pub category: String,
+    /// Money/sensitive app: the tile renders locked (blurred, no navigation)
+    /// until the session is unlocked with the money PIN. Default false.
+    #[serde(default)]
+    pub private: bool,
 }
 
 fn default_icon() -> String {
@@ -116,6 +120,7 @@ impl Catalog {
             icon: icon.to_owned(),
             hue,
             category: cat.to_owned(),
+                    private: false,
         };
         let srv = |cat: &str,
                    slug: &str,
@@ -134,8 +139,7 @@ impl Catalog {
                    port: u16,
                    icon: &str,
                    hue: u16| { app(cat, slug, name, tagline, MAC, "mac", port, icon, hue) };
-        Catalog {
-            apps: vec![
+        let mut apps = vec![
                 // ── daily — the things opened every day ──────────────────────
                 // brief page binds via tailscale serve — HTTPS like calendario
                 StoreApp {
@@ -148,6 +152,7 @@ impl Catalog {
                     icon: "sun".to_owned(),
                     hue: 15,
                     category: "daily".to_owned(),
+                    private: false,
                 },
                 // genealogy binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
                 StoreApp {
@@ -160,6 +165,7 @@ impl Catalog {
                     icon: "mesh".to_owned(),
                     hue: 200,
                     category: "apps".to_owned(),
+                    private: false,
                 },
                 // calendario binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
                 StoreApp {
@@ -172,6 +178,7 @@ impl Catalog {
                     icon: "calendar".to_owned(),
                     hue: 38,
                     category: "daily".to_owned(),
+                    private: false,
                 },
                 // hermeshub binds loopback → tailscale serve HTTPS (PWA needs it)
                 StoreApp {
@@ -184,6 +191,7 @@ impl Catalog {
                     icon: "speech".to_owned(),
                     hue: 275,
                     category: "daily".to_owned(),
+                    private: false,
                 },
                 srv(
                     "daily",
@@ -208,6 +216,7 @@ impl Catalog {
                     icon: "speech".to_owned(),
                     hue: 220,
                     category: "daily".to_owned(),
+                    private: false,
                 },
                 // gastos binds loopback → tailscale serve HTTPS, explicit URL
                 StoreApp {
@@ -220,6 +229,7 @@ impl Catalog {
                     icon: "coin".to_owned(),
                     hue: 5,
                     category: "daily".to_owned(),
+                    private: false,
                 },
                 // ── apps — products & experiments ────────────────────────────
                 srv("apps", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
@@ -240,6 +250,7 @@ impl Catalog {
                     icon: "hand".to_owned(),
                     hue: 330,
                     category: "apps".to_owned(),
+                    private: false,
                 },
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
@@ -260,9 +271,16 @@ impl Catalog {
                     icon: "mesh".to_owned(),
                     hue: 200,
                     category: "infra".to_owned(),
+                    private: false,
                 },
-            ],
+        ];
+        // Money-facing apps are locked by default (PIN unlock, session-scoped).
+        for a in &mut apps {
+            if matches!(a.slug.as_str(), "cuentas" | "gastos" | "portfolio") {
+                a.private = true;
+            }
         }
+        Catalog { apps }
     }
 }
 

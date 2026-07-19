@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="stylesheet" href="/static/store.css">
+  <link rel="stylesheet" href="/static/store.css?v=3">
 </head>
 <body class="store">
   <div class="grain" aria-hidden="true"></div>
@@ -24,7 +24,7 @@
   <div class="shell">
     <!-- command-line search -->
     <div class="cmd" id="cmd">
-      <svg class="cmd-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-term"/></svg>
+      <svg class="cmd-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-term" xlink:href="#i-term"/></svg>
       <span class="cmd-prompt" aria-hidden="true">&#10095;</span>
       <input id="q" type="text" placeholder="search apps &amp; tasks" autocomplete="off"
              autocapitalize="off" spellcheck="false" aria-label="search apps and tasks">
@@ -35,23 +35,23 @@
     <!-- live "now" strip: filled by store.js; each card degrades to hidden -->
     <section class="now" id="now-strip" aria-label="now">
       <a class="now-card now-locked" id="now-money" style="--h:145" href="https://caguaserver.tail82f3c6.ts.net:8789">
-        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-coin"/></svg>money
-          <svg class="now-lock" viewBox="0 0 24 24"><use href="#i-lock"/></svg></span>
+        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>money
+          <svg class="now-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg></span>
         <span class="now-v" id="now-money-v">&bull;&bull;&bull;&bull;</span>
         <span class="now-s" id="now-money-s">tap to unlock</span>
       </a>
       <a class="now-card" id="now-hermes" style="--h:265" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
-        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-speech"/></svg>hermes</span>
+        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-speech" xlink:href="#i-speech"/></svg>hermes</span>
         <span class="now-v" id="now-hermes-v">—</span>
         <span class="now-s" id="now-hermes-s">&nbsp;</span>
       </a>
       <a class="now-card now-next" id="now-next-1" style="--h:210" href="/board" hidden>
-        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-kanban"/></svg>next</span>
+        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>next</span>
         <span class="now-v now-v-sm" id="now-next-1-v">—</span>
         <span class="now-s" id="now-next-1-s">&nbsp;</span>
       </a>
       <a class="now-card now-next" id="now-next-2" style="--h:210" href="/board" hidden>
-        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-kanban"/></svg>next</span>
+        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>next</span>
         <span class="now-v now-v-sm" id="now-next-2-v">—</span>
         <span class="now-s" id="now-next-2-s">&nbsp;</span>
       </a>
@@ -67,9 +67,9 @@
              style="--h:{{ t.hue }};--i:{{ t.idx }}"
              href="{{ t.url }}" data-slug="{{ t.slug }}" data-tag="{{ t.tagline }}" data-cat="{{ g.title }}">
             <span class="squircle">
-              <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-{{ t.icon }}"/></svg>
+              <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-{{ t.icon }}" xlink:href="#i-{{ t.icon }}"/></svg>
               {% if t.has_led %}<span class="led" title="{% if t.up %}up{% else %}down{% endif %}"></span>{% endif %}
-              {% if t.private %}<span class="lock" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#i-lock"/></svg></span>{% endif %}
+              {% if t.private %}<span class="lock" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg></span>{% endif %}
             </span>
             <span class="label">{{ t.name }}</span>
             <span class="tag">{{ t.tagline }}</span>
@@ -90,17 +90,17 @@
   </div>
 
   <nav class="dock" aria-label="system">
-    <a href="/board" title="task board" class="dock-board"><svg viewBox="0 0 24 24"><use href="#i-kanban"/></svg></a>
+    <a href="/board" title="task board" class="dock-board"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg></a>
     <span class="dock-sep" aria-hidden="true"></span>
-    <a href="/inventory" title="fleet inventory"><svg viewBox="0 0 24 24"><use href="#i-nodes"/></svg></a>
-    <a href="/ports" title="ports"><svg viewBox="0 0 24 24"><use href="#i-plug"/></svg></a>
-    <a href="/paths" title="path health"><svg viewBox="0 0 24 24"><use href="#i-route"/></svg></a>
-    <a href="/workloads" title="workloads"><svg viewBox="0 0 24 24"><use href="#i-chip"/></svg></a>
-    <a href="/observability" title="observability"><svg viewBox="0 0 24 24"><use href="#i-eye"/></svg></a>
+    <a href="/inventory" title="fleet inventory"><svg viewBox="0 0 24 24"><use href="#i-nodes" xlink:href="#i-nodes"/></svg></a>
+    <a href="/ports" title="ports"><svg viewBox="0 0 24 24"><use href="#i-plug" xlink:href="#i-plug"/></svg></a>
+    <a href="/paths" title="path health"><svg viewBox="0 0 24 24"><use href="#i-route" xlink:href="#i-route"/></svg></a>
+    <a href="/workloads" title="workloads"><svg viewBox="0 0 24 24"><use href="#i-chip" xlink:href="#i-chip"/></svg></a>
+    <a href="/observability" title="observability"><svg viewBox="0 0 24 24"><use href="#i-eye" xlink:href="#i-eye"/></svg></a>
   </nav>
 
   <!-- glyph sprite — inlined so <use> works everywhere, incl. old Android -->
-  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none" aria-hidden="true">
     <defs>
       <symbol id="i-spade"><path d="M12 3.5c-2.8 3.8-6.8 5.3-6.8 8.9a3.4 3.4 0 0 0 5.6 2.6c-.2 1.9-.8 3.2-2 4.5h6.4c-1.2-1.3-1.8-2.6-2-4.5a3.4 3.4 0 0 0 5.6-2.6c0-3.6-4-5.1-6.8-8.9z"/></symbol>
       <symbol id="i-mountain"><path d="M3 19h18M4 19l6-10.5 3 5m8 5.5-5.5-8.5-2.4 3.9"/><path d="m8.2 12.6 1.8-3 1.7 2.8"/></symbol>
@@ -135,12 +135,12 @@
   <!-- money PIN popover (session unlock; the gate itself is server-side) -->
   <div class="pin-veil" id="pin-veil" hidden></div>
   <form class="pin-pop" id="pin-pop" hidden>
-    <span class="pin-k"><svg viewBox="0 0 24 24"><use href="#i-lock"/></svg>money pin</span>
+    <span class="pin-k"><svg viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg>money pin</span>
     <input id="pin-in" type="password" inputmode="numeric" maxlength="6" autocomplete="off"
            aria-label="money pin" placeholder="&bull;&bull;&bull;&bull;">
     <button type="submit" class="pin-go" id="pin-go">unlock</button>
   </form>
 
-  <script src="/static/store.js" defer></script>
+  <script src="/static/store.js?v=3" defer></script>
 </body>
 </html>

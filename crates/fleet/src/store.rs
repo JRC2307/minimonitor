@@ -173,6 +173,18 @@ impl Catalog {
                     hue: 38,
                     category: "daily".to_owned(),
                 },
+                // hermeshub binds loopback → tailscale serve HTTPS (PWA needs it)
+                StoreApp {
+                    slug: "hermeshub".to_owned(),
+                    name: "hermes".to_owned(),
+                    tagline: "chat + command center".to_owned(),
+                    url: "https://caguaserver.tail82f3c6.ts.net:8796".to_owned(),
+                    port: Some(8796),
+                    host: Some("caguaserver".to_owned()),
+                    icon: "speech".to_owned(),
+                    hue: 275,
+                    category: "daily".to_owned(),
+                },
                 srv(
                     "daily",
                     "command-center",

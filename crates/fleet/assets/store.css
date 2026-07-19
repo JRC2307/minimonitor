@@ -27,6 +27,7 @@ body.store {
   background:
     radial-gradient(120% 90% at 50% -10%, #141a26 0%, var(--ink) 55%),
     var(--ink);
+  min-height: 100vh; /* fallback for browsers without dvh */
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -37,38 +38,35 @@ body.store {
   overflow-x: hidden;
 }
 
-/* film grain — two offset repeating gradients, cheap on old GPUs */
+/* film grain — two offset repeating gradients, static, no blend mode
+   (mix-blend-mode over the full viewport forces continuous compositing
+   on weak mobile GPUs) */
 .grain {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.05;
+  opacity: 0.03;
   z-index: 3;
   background:
     repeating-linear-gradient(0deg, transparent 0 2px, #fff 2px 3px),
     repeating-linear-gradient(90deg, transparent 0 3px, #000 3px 5px);
-  mix-blend-mode: overlay;
 }
 
-/* faint drifting aurora behind the header — atmosphere, not noise */
+/* faint static aurora behind the header — pre-softened gradients, no
+   filter:blur and no animation (both were GPU hogs on the phone) */
 .aurora {
   position: fixed;
   inset: -20% -30% auto;
   height: 55vh;
   pointer-events: none;
   opacity: 0.35;
-  filter: blur(60px);
   background:
-    radial-gradient(38% 55% at 28% 30%, hsl(200 70% 30% / 0.35), transparent 70%),
-    radial-gradient(30% 45% at 72% 22%, hsl(150 60% 26% / 0.28), transparent 70%),
-    radial-gradient(26% 40% at 55% 60%, hsl(265 55% 28% / 0.22), transparent 70%);
-  animation: drift 26s ease-in-out infinite alternate;
+    radial-gradient(38% 55% at 28% 30%, hsl(200 70% 30% / 0.30), transparent 62%),
+    radial-gradient(30% 45% at 72% 22%, hsl(150 60% 26% / 0.24), transparent 62%),
+    radial-gradient(26% 40% at 55% 60%, hsl(265 55% 28% / 0.18), transparent 62%);
 }
-@keyframes drift {
-  from { transform: translate3d(-2%, 0, 0) scale(1); }
-  to   { transform: translate3d(3%, 3%, 0) scale(1.08); }
-}
-@media (prefers-reduced-motion: reduce) { .aurora { animation: none; } }
+/* small screens: drop the atmosphere layer entirely — the phone stays cool */
+@media (max-width: 700px) { .aurora { display: none; } }
 
 /* ── header: wordmark + big clock, like a phone lock line ─────────────────── */
 
@@ -318,8 +316,14 @@ body.store {
   from { opacity: 0; transform: translateY(14px) scale(0.85); }
   to   { opacity: 1; transform: none; }
 }
-@media (prefers-reduced-motion: reduce) {
+/* phones: no staggered entrance — `both` + long delays keeps tiles invisible
+   until every delay has elapsed, which on a busy mobile GPU looks like a blank
+   page. Content appears instantly instead. */
+@media (max-width: 700px) {
   .tile, .now-card { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
 .squircle {
@@ -422,8 +426,7 @@ body.unlocked .now-lock { display: none; }
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: #05070aa8;
-  backdrop-filter: blur(3px);
+  background: #05070acc;
 }
 .pin-pop {
   position: fixed;
@@ -559,8 +562,7 @@ body.unlocked .now-lock { display: none; }
   padding: 0.5rem 0.7rem;
   border-radius: 1.4rem;
   border: 1px solid var(--line);
-  background: #ffffff0a;
-  backdrop-filter: blur(6px);
+  background: #161b26f2;
   position: relative;
   z-index: 1;
 }
@@ -689,9 +691,10 @@ body.board-page {
   border-radius: 1.1rem;
   background: linear-gradient(180deg, #ffffff05, transparent 40%), var(--ink-2);
   min-height: 12rem;
+  max-height: calc(100vh - 16rem);
   max-height: calc(100dvh - 16rem);
 }
-@media (min-width: 800px) { .col { width: auto; max-height: calc(100dvh - 15rem); } }
+@media (min-width: 800px) { .col { width: auto; max-height: calc(100vh - 15rem); max-height: calc(100dvh - 15rem); } }
 
 .col-head {
   display: flex;
@@ -834,8 +837,7 @@ body.board-page {
 .sheet-veil {
   position: fixed;
   inset: 0;
-  background: #05070acc;
-  backdrop-filter: blur(3px);
+  background: #05070ad9;
   z-index: 40;
 }
 .sheet {

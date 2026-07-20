@@ -251,6 +251,19 @@ impl Catalog {
                     category: "apps".to_owned(),
                     private: false,
                 },
+                // external — public Cloudflare Workers demo, no port/LED
+                StoreApp {
+                    slug: "puertacaja".to_owned(),
+                    name: "PuertaCaja".to_owned(),
+                    tagline: "POS + puerta QR para eventos pop-up (demo)".to_owned(),
+                    url: "https://puertacaja-popup.jrckc23.workers.dev".to_owned(),
+                    port: None,
+                    host: None,
+                    icon: "door".to_owned(),
+                    hue: 28,
+                    category: "apps".to_owned(),
+                    private: false,
+                },
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
                 mac("dev", "opencode-web", "opencode", "web ui", 4096, "code", 175),
@@ -304,6 +317,27 @@ mod tests {
         let before = slugs.len();
         slugs.dedup();
         assert_eq!(before, slugs.len(), "duplicate slugs in builtin catalog");
+    }
+
+    #[test]
+    fn puertacaja_is_a_public_portless_app() {
+        let cat = Catalog::builtin();
+        let app = cat
+            .apps
+            .iter()
+            .find(|a| a.slug == "puertacaja")
+            .expect("PuertaCaja must be in the builtin catalog");
+
+        assert_eq!(app.name, "PuertaCaja");
+        assert_eq!(
+            app.url,
+            "https://puertacaja-popup.jrckc23.workers.dev"
+        );
+        assert_eq!(app.category, "apps");
+        assert_eq!(app.icon, "door");
+        assert_eq!(app.port, None);
+        assert_eq!(app.host, None);
+        assert!(!app.private);
     }
 
     #[test]

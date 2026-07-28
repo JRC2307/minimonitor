@@ -238,6 +238,19 @@ impl Catalog {
                 srv("apps", "iprep", "iprep", "interview prep", 3011, "cap", 210),
                 srv("apps", "portfolio", "portfolio", "inversiones", 3010, "chart", 95),
                 srv("apps", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
+                // runner-prada binds loopback → tailscale serve HTTPS, explicit URL
+                StoreApp {
+                    slug: "runner-prada".to_owned(),
+                    name: "runner".to_owned(),
+                    tagline: "bodega + radios en set".to_owned(),
+                    url: "https://caguaserver.tail82f3c6.ts.net:8095".to_owned(),
+                    port: Some(8095),
+                    host: Some("caguaserver".to_owned()),
+                    icon: "kanban".to_owned(),
+                    hue: 200,
+                    category: "apps".to_owned(),
+                    private: false,
+                },
                 // external — public Cloudflare Workers site, no port/LED
                 StoreApp {
                     slug: "manos".to_owned(),

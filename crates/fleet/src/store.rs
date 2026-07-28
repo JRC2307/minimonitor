@@ -240,10 +240,10 @@ impl Catalog {
                 srv("apps", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
                 // external — public Cloudflare Worker (PIN gate), no port/LED
                 StoreApp {
-                    slug: "runners".to_owned(),
-                    name: "runners".to_owned(),
+                    slug: "roners".to_owned(),
+                    name: "roners".to_owned(),
                     tagline: "planes de rodaje · bodega · radios".to_owned(),
-                    url: "https://runners.javierr.com".to_owned(),
+                    url: "https://roner.mx".to_owned(),
                     port: None,
                     host: None,
                     icon: "kanban".to_owned(),

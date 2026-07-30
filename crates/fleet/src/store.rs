@@ -277,6 +277,19 @@ impl Catalog {
                     category: "apps".to_owned(),
                     private: false,
                 },
+                // external — public Cloudflare Pages PWA, no port/LED
+                StoreApp {
+                    slug: "rawcam".to_owned(),
+                    name: "rawcam".to_owned(),
+                    tagline: "clean camera + overlays".to_owned(),
+                    url: "https://rawcam.pages.dev".to_owned(),
+                    port: None,
+                    host: None,
+                    icon: "camera".to_owned(),
+                    hue: 12,
+                    category: "apps".to_owned(),
+                    private: false,
+                },
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
                 mac("dev", "opencode-web", "opencode", "web ui", 4096, "code", 175),

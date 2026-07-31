@@ -396,6 +396,20 @@ impl Catalog {
                 },
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
+                // hermes agent TUI on the mini — cookie-auth proxy binds loopback,
+                // fronted by tailscale serve → explicit HTTPS like calendario
+                StoreApp {
+                    slug: "hermes-tui".to_owned(),
+                    name: "hermes·tui".to_owned(),
+                    tagline: "agente oficial · web".to_owned(),
+                    url: "https://js-mac-mini.tail82f3c6.ts.net:7683".to_owned(),
+                    port: Some(7683),
+                    host: Some("mac".to_owned()),
+                    icon: "bot".to_owned(),
+                    hue: 260,
+                    category: "dev".to_owned(),
+                    private: false,
+                },
                 mac("dev", "opencode-web", "opencode", "web ui", 4096, "code", 175),
                 mac("dev", "ttyd-opencode", "oc·term", "opencode tty", 7682, "term", 85),
                 // ── infra — monitoring & plumbing ────────────────────────────

@@ -220,6 +220,11 @@ pub struct ServeConfig {
     /// cuentas base URL for the `/hub/cuentas/*` proxy (GET only).
     #[serde(default = "default_cuentas_url")]
     pub cuentas_url: String,
+    /// `user:pass` Basic credential the proxy presents to cuentas upstream
+    /// (cuentas fails closed behind `CUENTAS_AUTH_PASSWORD` since 2026-07-24).
+    /// Unset → requests go upstream unauthenticated.
+    #[serde(default)]
+    pub cuentas_basic_auth: Option<String>,
     /// hermeshub base URL for the `/hub/hermes/*` proxy (GET only).
     #[serde(default = "default_hermeshub_url")]
     pub hermeshub_url: String,

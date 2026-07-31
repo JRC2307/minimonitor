@@ -47,6 +47,8 @@ pub struct AppState {
     pub cc_url: String,
     /// cuentas base URL (`/hub/cuentas/*` upstream).
     pub cuentas_url: String,
+    /// `user:pass` Basic credential presented to cuentas upstream.
+    pub cuentas_basic_auth: Option<String>,
     /// hermeshub base URL (`/hub/hermes/*` upstream).
     pub hermeshub_url: String,
     /// PIN for the money proxy (`X-Money-Pin` header). None → proxy disabled.

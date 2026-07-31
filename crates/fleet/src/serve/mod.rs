@@ -69,6 +69,7 @@ pub fn build_router(db_path: PathBuf) -> Router {
         http: reqwest::Client::new(),
         cc_url: "http://127.0.0.1:8787".to_owned(),
         cuentas_url: "http://127.0.0.1:8789".to_owned(),
+        cuentas_basic_auth: None,
         hermeshub_url: "http://127.0.0.1:8796".to_owned(),
         money_pin: None,
     })
@@ -176,6 +177,7 @@ pub async fn run_with(
         http: reqwest::Client::new(),
         cc_url: cfg.cc_url.clone(),
         cuentas_url: cfg.cuentas_url.clone(),
+        cuentas_basic_auth: cfg.cuentas_basic_auth.clone(),
         hermeshub_url: cfg.hermeshub_url.clone(),
         money_pin: cfg.money_pin.clone(),
     });
@@ -749,6 +751,7 @@ mod tests {
             http: reqwest::Client::new(),
             cc_url: "http://127.0.0.1:1".to_owned(),
             cuentas_url: "http://127.0.0.1:1".to_owned(),
+            cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
             money_pin: Some("4242".to_owned()),
         })
@@ -1500,6 +1503,7 @@ mod tests {
             http: reqwest::Client::new(),
             cc_url: cc_url.to_owned(),
             cuentas_url: cc_url.to_owned(),
+            cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
             money_pin: Some("4242".to_owned()),
         })
@@ -1535,6 +1539,17 @@ mod tests {
                 "/api/tasks/{id}",
                 post(|body: String| async move {
                     axum::Json(serde_json::json!({"patched": true, "body": body}))
+                }),
+            )
+            .route(
+                "/api/auth-echo",
+                get(|headers: axum::http::HeaderMap| async move {
+                    let auth = headers
+                        .get("authorization")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_owned();
+                    axum::Json(serde_json::json!({"authorization": auth}))
                 }),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1633,6 +1648,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn hub_cuentas_presents_basic_auth_upstream() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        let router = build_router_with(routes::AppState {
+            db_path: f.path().to_path_buf(),
+            online_threshold: Duration::from_secs(900),
+            snapshot_stale_threshold: DEFAULT_SNAPSHOT_STALE_THRESHOLD,
+            beszel_ui_url: String::new(),
+            kuma_ui_url: String::new(),
+            labels: std::sync::Arc::new(crate::service_label::Labels::empty()),
+            store: std::sync::Arc::new(crate::store::Catalog::builtin()),
+            http: reqwest::Client::new(),
+            cc_url: "http://127.0.0.1:1".to_owned(),
+            cuentas_url: base,
+            cuentas_basic_auth: Some("cagua:secreta".to_owned()),
+            hermeshub_url: "http://127.0.0.1:1".to_owned(),
+            money_pin: Some("4242".to_owned()),
+        });
+        let req = Request::builder()
+            .uri("/hub/cuentas/auth-echo")
+            .header("x-money-pin", "4242")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        // base64("cagua:secreta")
+        assert_eq!(v["authorization"], "Basic Y2FndWE6c2VjcmV0YQ==");
+    }
+
+    #[tokio::test]
     async fn hub_cuentas_disabled_without_configured_pin() {
         let f = seed_db(&[]);
         let mut router = hub_router(f.path().to_path_buf(), "http://127.0.0.1:1");
@@ -1648,6 +1697,7 @@ mod tests {
             http: reqwest::Client::new(),
             cc_url: "http://127.0.0.1:1".to_owned(),
             cuentas_url: "http://127.0.0.1:1".to_owned(),
+            cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
             money_pin: None,
         });

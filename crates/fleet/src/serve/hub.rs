@@ -37,9 +37,12 @@ fn json_error(status: StatusCode, msg: &str) -> Response {
 }
 
 /// Forward `method /api/{rest}?{query}` to `base`, enforcing `allowed` methods.
+/// `basic_auth` (`"user:pass"`) is presented upstream when the sibling service
+/// has its own credential (cuentas fails closed since 2026-07-24).
 async fn proxy(
     state: &AppState,
     base: &str,
+    basic_auth: Option<&str>,
     allowed: &[Method],
     method: Method,
     rest: &str,
@@ -57,6 +60,10 @@ async fn proxy(
     }
 
     let mut req = state.http.request(method, &url).timeout(HUB_TIMEOUT);
+    if let Some(cred) = basic_auth {
+        let (user, pass) = cred.split_once(':').unwrap_or((cred, ""));
+        req = req.basic_auth(user, Some(pass));
+    }
     if !body.is_empty() {
         req = req
             .header(header::CONTENT_TYPE, "application/json")
@@ -99,6 +106,7 @@ pub async fn hub_cc(
     proxy(
         &state,
         &base,
+        None,
         &[Method::GET, Method::POST, Method::DELETE],
         method,
         &rest,
@@ -130,7 +138,18 @@ pub async fn hub_cuentas(
         return json_error(StatusCode::UNAUTHORIZED, "money pin required");
     }
     let base = state.cuentas_url.clone();
-    proxy(&state, &base, &[Method::GET], method, &rest, query, body).await
+    let auth = state.cuentas_basic_auth.clone();
+    proxy(
+        &state,
+        &base,
+        auth.as_deref(),
+        &[Method::GET],
+        method,
+        &rest,
+        query,
+        body,
+    )
+    .await
 }
 
 /// `/hub/hermes/{*rest}` — hermeshub. Read-only.
@@ -142,5 +161,15 @@ pub async fn hub_hermes(
     body: Bytes,
 ) -> Response {
     let base = state.hermeshub_url.clone();
-    proxy(&state, &base, &[Method::GET], method, &rest, query, body).await
+    proxy(
+        &state,
+        &base,
+        None,
+        &[Method::GET],
+        method,
+        &rest,
+        query,
+        body,
+    )
+    .await
 }

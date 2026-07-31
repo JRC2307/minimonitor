@@ -180,6 +180,19 @@ impl Catalog {
                     category: "daily".to_owned(),
                     private: false,
                 },
+                // whoop-snapshot binds 127.0.0.1 → tailscale serve HTTPS
+                StoreApp {
+                    slug: "vitals".to_owned(),
+                    name: "vitals".to_owned(),
+                    tagline: "whoop health tracker".to_owned(),
+                    url: "https://caguaserver.tail82f3c6.ts.net:3016".to_owned(),
+                    port: Some(3016),
+                    host: Some("caguaserver".to_owned()),
+                    icon: "pulse".to_owned(),
+                    hue: 350,
+                    category: "daily".to_owned(),
+                    private: false,
+                },
                 // hermeshub binds loopback → tailscale serve HTTPS (PWA needs it)
                 StoreApp {
                     slug: "hermeshub".to_owned(),

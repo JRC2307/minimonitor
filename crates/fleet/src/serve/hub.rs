@@ -205,7 +205,9 @@ pub async fn hub_portfolio(
     .await
 }
 
-/// `/hub/vitals/{*rest}` — vitals (WHOOP dashboard). Read-only.
+/// `/hub/vitals/{*rest}` — vitals (WHOOP dashboard). Read-only, except the
+/// journal endpoint: the launcher's "marcar" widget logs context marks
+/// (eat/drink/stress/...) straight into the vitals journal.
 pub async fn hub_vitals(
     State(state): State<AppState>,
     method: Method,
@@ -213,8 +215,13 @@ pub async fn hub_vitals(
     RawQuery(query): RawQuery,
     body: Bytes,
 ) -> Response {
+    let allowed: &[Method] = if rest == "journal" {
+        &[Method::GET, Method::POST]
+    } else {
+        &[Method::GET]
+    };
     let base = state.vitals_url.clone();
-    proxy(&state, &base, None, None, &[Method::GET], method, &rest, query, body).await
+    proxy(&state, &base, None, None, allowed, method, &rest, query, body).await
 }
 
 /// `/hub/hermes/{*rest}` — hermeshub. GET everywhere; POST only on the

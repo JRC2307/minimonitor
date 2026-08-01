@@ -1270,3 +1270,42 @@ body.board-page {
   animation: sheetup 0.2s ease both;
 }
 .toast.ok { border-color: #2a5c3f; background: #12261aee; }
+
+/* marcar — context-mark chips into the vitals journal */
+.wg-marks { gap: 0.5rem; }
+.marks-status { margin-left: auto; letter-spacing: 0.04em; text-transform: none; color: var(--muted); }
+.marks-row { display: flex; gap: 0.4rem; overflow-x: auto; scrollbar-width: none; padding: 1px; }
+.marks-row::-webkit-scrollbar { display: none; }
+.mkch {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  min-height: 2.4rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff06;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.mkch::before { content: ""; width: 8px; height: 8px; border-radius: 99px; background: var(--c); }
+.mkch:active { background: #ffffff12; }
+.mkch.sent { border-color: var(--c); background: #ffffff0c; }
+.mkwh {
+  flex: none;
+  min-height: 1.9rem;
+  padding: 0 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.mkwh.on { border-color: var(--line); color: var(--fg); background: #ffffff08; }

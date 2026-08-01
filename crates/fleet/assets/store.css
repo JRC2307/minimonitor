@@ -37,9 +37,9 @@ body.store {
   display: flex;
   flex-direction: column;
   padding:
-    calc(env(safe-area-inset-top, 0px) + 1.5rem)
+    calc(env(safe-area-inset-top, 0px) + 1.2rem)
     1.1rem
-    calc(env(safe-area-inset-bottom, 0px) + 1rem);
+    0;
   overflow-x: hidden;
 }
 
@@ -141,9 +141,195 @@ body.store {
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
   position: relative;
   z-index: 1;
 }
+
+/* ── SPA screens — one viewport, screens scroll inside ────────────────────── */
+
+.screens {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  margin: 0 -1.1rem;
+  padding: 0.1rem 1.1rem 1rem;
+}
+.screens::-webkit-scrollbar { display: none; }
+.screen { display: flex; flex-direction: column; }
+
+.scr-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  margin-bottom: 0.7rem;
+}
+.scr-head .sec-head { margin: 0; flex: 1; }
+
+/* segmented control (mercado refresh mode) */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff05;
+  overflow: hidden;
+}
+.seg-b {
+  font: inherit;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 0.35em 0.75em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg-b.on { background: #8fb4dd1a; color: #b8d2ee; }
+
+/* fold — collapse anything to its essence */
+.fold-btn {
+  background: none;
+  border: 0;
+  padding: 0.25rem 0.4rem;
+  margin-left: 0.3em;
+  cursor: pointer;
+  color: var(--muted);
+  order: 2;
+}
+.fold-btn::before {
+  content: "";
+  display: block;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+.folded .fold-btn::before { transform: rotate(-45deg); }
+.folded .fold-body { display: none; }
+.sec-head::after { order: 1; }
+.fold-n {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 0.62rem;
+  color: var(--amber);
+}
+
+/* mercado refresh button */
+.mkt-refresh {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.12em 0.5em;
+  cursor: pointer;
+}
+.mkt-refresh:hover { color: var(--fg); }
+
+/* noticias — feed chips + add form */
+.feeds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+.feed-x {
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  margin-left: 0.45em;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.feed-x:hover { opacity: 1; }
+.feed-add {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+.feed-add input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--fg);
+  background: #0b0e14;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  padding: 0.45em 0.65em;
+  outline: 0;
+}
+.feed-add input:focus { border-color: #313d51; }
+#feed-name { flex: 0 0 6.2rem; }
+
+/* sistema row (apps screen) */
+.sysrow { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.sysrow a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  padding: 0.42em 0.75em;
+  background: #ffffff05;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.sysrow a:hover { color: var(--fg); border-color: #313d51; }
+.sysrow svg {
+  width: 0.95rem; height: 0.95rem;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ── bottom tab menu ──────────────────────────────────────────────────────── */
+
+.tabbar {
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  margin: 0 -1.1rem;
+  border-top: 1px solid var(--line);
+  background: #0c0f15f5;
+  padding: 0.4rem 0.4rem calc(env(safe-area-inset-bottom, 0px) + 0.4rem);
+  position: relative;
+  z-index: 5;
+}
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.18rem;
+  min-width: 3.6rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.7rem;
+  text-decoration: none;
+  color: var(--faint);
+  font-size: 0.52rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: color 0.12s ease;
+}
+.tab svg {
+  width: 1.15rem; height: 1.15rem;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.tab.on { color: var(--fg); }
+.tab.on svg { color: var(--accent); }
+.tab:active { transform: scale(0.94); }
 @media (min-width: 900px) { .shell { max-width: 860px; } }
 @media (min-width: 700px) { .tag { display: block; } }
 

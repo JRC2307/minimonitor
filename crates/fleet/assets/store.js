@@ -144,6 +144,17 @@
     document.getElementById('w-market-list').innerHTML = rows.join('');
     document.getElementById('w-market-s').textContent =
       fmtK(pfTotal) + ' total · bolsa ' + (anyOpen ? 'abierta' : 'cerrada') + ' · cripto 24/7';
+    // home mini chip: total + value-weighted day move
+    var wSum = 0, wTot = 0;
+    pfPositions.forEach(function (p) {
+      var q = pfQuotes[p._sym];
+      if (q && q.changePct != null) { wSum += q.changePct * (p.value || 0); wTot += p.value || 0; }
+    });
+    document.getElementById('w-mkt-mini-v').textContent = fmtK(pfTotal);
+    document.getElementById('w-mkt-mini-s').textContent = wTot
+      ? 'mercado ' + (wSum >= 0 ? '+' : '−') + Math.abs(wSum / wTot).toFixed(2) + '% hoy'
+      : 'mercado';
+    document.getElementById('w-mkt-mini').classList.remove('wg-locked');
   }
 
   function loadQuotes() {
@@ -174,8 +185,7 @@
         renderMarket();
         document.getElementById('w-market').classList.remove('wg-locked');
         loadQuotes();
-        clearInterval(quoteTimer);
-        quoteTimer = setInterval(loadQuotes, 300000);
+        applyMktMode();
       });
   }
 
@@ -301,6 +311,7 @@
         pulseActions('app', slug) + '</div>');
     });
     pulseList.innerHTML = items.slice(0, 6).join('');
+    document.getElementById('pulse-n').textContent = items.length ? String(items.length) : '';
     pulse.hidden = !items.length || !!q.value;
   }
 
@@ -488,167 +499,140 @@
       show(document.getElementById('w-fx'));
     }).catch(function () {});
 
-  // ── titulares — breaking news (server-side RSS proxy, 10 min cache) ────────
-  getJSON('/api/news').then(function (d) {
-    var items = (d.items || []).slice(0, 5);
-    if (!items.length) return;
-    document.getElementById('w-news-list').innerHTML = items.map(function (n) {
-      return '<a class="news-it" href="' + esc(n.link || '#') + '" target="_blank" rel="noopener">' +
-        '<span class="news-t">' + esc(n.title) + '</span>' +
-        (n.source ? '<span class="news-src">' + esc(n.source) + '</span>' : '') + '</a>';
-    }).join('');
-    show(document.getElementById('w-news'));
-  }).catch(function () {});
-
-  // ── weather — CDMX snapshot (open-meteo, no key) ───────────────────────────
-  var WMO = [
-    [0, 'sun', 'despejado'], [1, 'sun', 'casi despejado'], [2, 'cloud', 'parcial'],
-    [3, 'cloud', 'nublado'], [45, 'cloud', 'niebla'], [48, 'cloud', 'niebla'],
-    [95, 'bolt', 'tormenta'], [96, 'bolt', 'tormenta'], [99, 'bolt', 'tormenta']
-  ];
-  function wmoLookup(code) {
-    for (var i = 0; i < WMO.length; i++) if (WMO[i][0] === code) return WMO[i];
-    if (code >= 71 && code <= 86) return [code, 'rain', 'nieve'];
-    if (code >= 51) return [code, 'rain', 'lluvia'];
-    return [code, 'cloud', ''];
+  // ── SPA router — screens + bottom tabs ─────────────────────────────────────
+  var SCREENS = { inicio: 'scr-home', mercado: 'scr-market', noticias: 'scr-news', apps: 'scr-apps' };
+  var curScreen = 'inicio';
+  function showScreen(name) {
+    if (!SCREENS[name]) name = 'inicio';
+    curScreen = name;
+    Object.keys(SCREENS).forEach(function (k) {
+      document.getElementById(SCREENS[k]).hidden = k !== name;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.tab[data-scr]'), function (t) {
+      t.classList.toggle('on', t.getAttribute('href') === '#' + name);
+    });
+    if (name === 'mercado' && mktMode() === 'manual') loadQuotes();
+    if (name === 'noticias') loadNews();
+    document.getElementById('screens').scrollTop = 0;
   }
-  getJSON('https://api.open-meteo.com/v1/forecast?latitude=19.43&longitude=-99.13' +
-    '&current=temperature_2m,weather_code' +
-    '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
-    '&timezone=America%2FMexico_City&forecast_days=1')
-    .then(function (w) {
-      var cur = w.current || {};
-      var day = w.daily || {};
-      var kind = wmoLookup(cur.weather_code || 0);
-      var icon = document.getElementById('w-wx-icon');
-      icon.setAttribute('href', '#i-' + kind[1]);
-      icon.setAttribute('xlink:href', '#i-' + kind[1]);
-      document.getElementById('w-wx-v').textContent =
-        Math.round(cur.temperature_2m) + '°';
-      var lo = Math.round((day.temperature_2m_min || [0])[0]);
-      var hi = Math.round((day.temperature_2m_max || [0])[0]);
-      var rain = (day.precipitation_probability_max || [0])[0];
-      document.getElementById('w-wx-s').textContent =
-        kind[2] + ' · ' + lo + '–' + hi + '° · lluvia ' + rain + '%';
-      show(document.getElementById('w-wx'));
-    }).catch(function () {});
+  function route() { showScreen((location.hash || '#inicio').slice(1)); }
+  window.addEventListener('hashchange', route);
 
-  getJSON('/hub/cc/next').then(function (projects) {
-    if (!Array.isArray(projects)) return;
-    var p = projects.filter(function (x) { return !x.blocked && x.next_action; })[0];
-    if (!p) return;
-    var card = document.getElementById('w-next-1');
-    card.href = '/board?project=' + p.project_id;
-    document.getElementById('w-next-1-v').textContent = p.next_action;
-    document.getElementById('w-next-1-s').textContent =
-      p.name + ' · ' + (p.bucket || 'next');
-    show(card);
-  }).catch(function () {});
-
-  // ── quick prompt (`>` mode) — any model, through hermes ────────────────────
-  var MODEL_KEY = 'caguastore.model';
-  var modelsRow = document.getElementById('models');
-  var askPanel = document.getElementById('ask');
-  var askQText = document.getElementById('ask-q-text');
-  var askModel = document.getElementById('ask-model');
-  var askA = document.getElementById('ask-a');
-  var models = [];          // [{id,label,default}]
-  var modelsLoaded = false;
-  var askPollTimer = null;
-
-  function pickedModel() {
-    var saved = localStorage.getItem(MODEL_KEY);
-    var hit = models.filter(function (m) { return m.id === saved; })[0];
-    if (hit) return hit;
-    return models.filter(function (m) { return m.default; })[0] || models[0] || null;
+  // ── folds — collapse anything to its essence, persisted ────────────────────
+  var FOLD_KEY = 'caguastore.folds';
+  var folds = {};
+  try { folds = JSON.parse(localStorage.getItem(FOLD_KEY) || '{}'); } catch (e) { folds = {}; }
+  function applyFolds() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-fold]'), function (el) {
+      el.classList.toggle('folded', !!folds[el.dataset.fold]);
+    });
   }
-
-  function renderModels() {
-    var cur = pickedModel();
-    modelsRow.innerHTML = models.map(function (m) {
-      return '<button type="button" class="chip' +
-        (cur && m.id === cur.id ? ' on' : '') + '" data-model="' + esc(m.id) + '">' +
-        esc(m.label) + '</button>';
-    }).join('');
-  }
-  modelsRow.addEventListener('click', function (e) {
-    var b = e.target.closest ? e.target.closest('[data-model]') : null;
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-fold-btn]') : null;
     if (!b) return;
-    localStorage.setItem(MODEL_KEY, b.dataset.model);
-    renderModels();
-    q.focus();
+    e.preventDefault();
+    e.stopPropagation();
+    var k = b.dataset.foldBtn;
+    folds[k] = !folds[k];
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch (err) {}
+    applyFolds();
+  }, true);
+  applyFolds();
+
+  // ── mercado refresh modes ──────────────────────────────────────────────────
+  var MKT_MODE_KEY = 'caguastore.mktMode';
+  function mktMode() { return localStorage.getItem(MKT_MODE_KEY) || '5min'; }
+  function applyMktMode() {
+    var m = mktMode();
+    Array.prototype.forEach.call(document.querySelectorAll('#mkt-seg .seg-b'), function (b) {
+      b.classList.toggle('on', b.dataset.mode === m);
+    });
+    clearInterval(quoteTimer);
+    if (m === 'live') quoteTimer = setInterval(loadQuotes, 60000);
+    else if (m === '5min') quoteTimer = setInterval(loadQuotes, 300000);
+  }
+  document.getElementById('mkt-seg').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.seg-b') : null;
+    if (!b) return;
+    localStorage.setItem(MKT_MODE_KEY, b.dataset.mode);
+    applyMktMode();
+    loadQuotes();
+  });
+  document.getElementById('mkt-refresh').addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    loadQuotes();
+    toast('cotizaciones al día', true);
+  });
+  applyMktMode();
+
+  // ── noticias — tunable feeds (google MX default + custom RSS) ──────────────
+  var FEEDS_KEY = 'caguastore.feeds';
+  function getFeeds() {
+    try { return JSON.parse(localStorage.getItem(FEEDS_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function setFeeds(f) {
+    try { localStorage.setItem(FEEDS_KEY, JSON.stringify(f)); } catch (e) {}
+  }
+  function renderFeedChips() {
+    var custom = getFeeds();
+    var html = '<span class="chip on">méxico</span>' + custom.map(function (f, i) {
+      return '<span class="chip on">' + esc(f.name) +
+        '<button type="button" class="feed-x" data-fi="' + i + '" aria-label="quitar">&times;</button></span>';
+    }).join('');
+    document.getElementById('feeds').innerHTML = html;
+  }
+  document.getElementById('feeds').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.feed-x') : null;
+    if (!b) return;
+    var f = getFeeds();
+    f.splice(parseInt(b.dataset.fi, 10), 1);
+    setFeeds(f);
+    renderFeedChips();
+    loadNews(true);
+  });
+  document.getElementById('feed-add').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = document.getElementById('feed-name').value.trim() || 'feed';
+    var url = document.getElementById('feed-url').value.trim();
+    if (!/^https:\/\//.test(url)) { toast('la url debe ser https', false); return; }
+    var f = getFeeds();
+    f.push({ name: name, url: url });
+    setFeeds(f);
+    document.getElementById('feed-name').value = '';
+    document.getElementById('feed-url').value = '';
+    renderFeedChips();
+    loadNews(true);
   });
 
-  function loadModels() {
-    if (modelsLoaded) return Promise.resolve();
-    return getJSON('/hub/hermes/models').then(function (d) {
-      models = (d && d.models) || [];
-      modelsLoaded = true;
-      renderModels();
-    }).catch(function () { renderModels(); });
-  }
-
-  function stopAskPoll() {
-    if (askPollTimer) { clearTimeout(askPollTimer); askPollTimer = null; }
-  }
-
-  function closeAsk() {
-    stopAskPoll();
-    askPanel.hidden = true;
-  }
-  document.getElementById('ask-close').addEventListener('click', function () {
-    closeAsk();
-    q.focus();
-  });
-
-  function pollReply(afterId, deadline) {
-    askPollTimer = setTimeout(function () {
-      getJSON('/hub/hermes/messages?channel=quick&after_id=' + afterId).then(function (msgs) {
-        var reply = (msgs || []).filter(function (m) { return m.sender !== 'user'; })[0];
-        if (reply) {
-          askA.textContent = reply.text || '(empty reply)';
-          askA.classList.remove('thinking');
-          // keep quick chatter out of the pulse feed
-          postJSON('/hub/hermes/channels/quick/read', { last_id: reply.id }).catch(function () {});
-          return;
-        }
-        if (Date.now() > deadline) {
-          askA.textContent = 'no reply yet — it will land in hermes.';
-          askA.classList.remove('thinking');
-          return;
-        }
-        pollReply(afterId, deadline);
-      }).catch(function () {
-        if (Date.now() > deadline) {
-          askA.textContent = 'lost the connection — check hermes.';
-          askA.classList.remove('thinking');
-        } else {
-          pollReply(afterId, deadline);
-        }
+  var newsLoaded = false;
+  function loadNews(force) {
+    if (newsLoaded && !force) return;
+    newsLoaded = true;
+    renderFeedChips();
+    var jobs = [getJSON('/api/news').then(function (d) {
+      return (d.items || []).map(function (n) {
+        return { title: n.title, src: n.source || 'méxico', ts: n.ts, link: n.link };
       });
-    }, 1500);
-  }
-
-  function sendAsk(text) {
-    var m = pickedModel();
-    stopAskPoll();
-    askPanel.hidden = false;
-    askQText.textContent = text;
-    askModel.textContent = m ? m.label : 'hermes';
-    askA.textContent = 'thinking';
-    askA.classList.add('thinking');
-    // ensure the scratch channel exists (409 = already there), pin the model,
-    // then send. Failures surface in the panel instead of dying silently.
-    postJSON('/hub/hermes/channels', { name: 'quick' }).then(function () {
-      return m ? postJSON('/hub/hermes/channels/quick/model', { model: m.id }) : null;
-    }).then(function () {
-      return postJSON('/hub/hermes/send', { channel: 'quick', text: text });
-    }).then(function (r) {
-      if (!r || !r.ok || !r.body || !r.body.id) throw new Error('send failed');
-      pollReply(r.body.id, Date.now() + 120000);
-    }).catch(function () {
-      askA.textContent = 'could not reach hermes.';
-      askA.classList.remove('thinking');
+    }).catch(function () { return []; })];
+    getFeeds().forEach(function (f) {
+      jobs.push(getJSON('/api/rss?url=' + encodeURIComponent(f.url)).then(function (d) {
+        return (d.items || []).map(function (n) {
+          return { title: n.title, src: f.name, ts: n.ts, link: n.link };
+        });
+      }).catch(function () { return []; }));
+    });
+    Promise.all(jobs).then(function (lists) {
+      var all = [];
+      lists.forEach(function (l) { all = all.concat(l); });
+      all.sort(function (a, b) {
+        return (Date.parse(b.ts) || 0) - (Date.parse(a.ts) || 0);
+      });
+      document.getElementById('w-news-list').innerHTML = all.slice(0, 30).map(function (n) {
+        return '<a class="news-it" href="' + esc(n.link || '#') + '" target="_blank" rel="noopener">' +
+          '<span class="news-t">' + esc(n.title) + '</span>' +
+          '<span class="news-src">' + esc(n.src) + '</span></a>';
+      }).join('');
     });
   }
 
@@ -773,7 +757,10 @@
     }, 180);
   }
 
-  q.addEventListener('input', applyFilter);
+  q.addEventListener('input', function () {
+    applyFilter();
+    if (q.value && !askMode() && curScreen !== 'apps') location.hash = '#apps';
+  });
   qClear.addEventListener('click', function () {
     q.value = '';
     applyFilter();
@@ -827,4 +814,6 @@
       if (raw.length > 1 && !anyTileHit) sendAsk(raw);
     }
   });
+
+  route();
 })();

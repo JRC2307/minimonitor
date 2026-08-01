@@ -123,6 +123,7 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/hub/vitals/{*rest}", any(hub::hub_vitals))
         .route("/hub/portfolio/{*rest}", any(hub::hub_portfolio))
         .route("/api/news", get(routes::get_news))
+        .route("/api/rss", get(routes::get_rss))
         .route("/api/quotes", get(routes::get_quotes))
         // HTML views (askama, server-rendered)
         .route("/inventory", get(routes::get_index))
@@ -813,6 +814,52 @@ mod tests {
             !html.contains("<html"),
             "partial must be a fragment, not the full page:\n{html}"
         );
+    }
+
+    // ── /api/rss (generalized feed proxy) ────────────────────────────────────
+
+    #[tokio::test]
+    async fn api_rss_rejects_missing_or_invalid_url() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+
+        // No url at all.
+        let (status, body) = oneshot_get(router.clone(), "/api/rss").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(String::from_utf8_lossy(&body).contains("error"));
+
+        // Plain http (not https).
+        let (status, _) =
+            oneshot_get(router.clone(), "/api/rss?url=http://example.com/feed.xml").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // Userinfo smuggling.
+        let (status, _) =
+            oneshot_get(router, "/api/rss?url=https://evil@example.com/feed.xml").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn api_rss_rejects_internal_hosts() {
+        let f = seed_db(&[]);
+        let router = full_router(f.path().to_path_buf());
+
+        for url in [
+            "https://caguaserver.tail82f3c6.ts.net/x",
+            "https://localhost/feed",
+            "https://127.0.0.1:8787/feed",
+            "https://192.168.1.10/feed",
+            "https://100.64.0.1/feed",
+            "https://10.0.0.5/feed",
+        ] {
+            let (status, body) =
+                oneshot_get(router.clone(), &format!("/api/rss?url={url}")).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{url} should be rejected");
+            assert!(
+                String::from_utf8_lossy(&body).contains("error"),
+                "{url}: body should be an error JSON"
+            );
+        }
     }
 
     // ── caguastore launcher (`/`) ────────────────────────────────────────────

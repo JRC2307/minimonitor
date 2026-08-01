@@ -517,6 +517,145 @@ pub async fn get_quotes(
     ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response()
 }
 
+// ── GET /api/rss (generalized RSS/Atom proxy for launcher widgets) ───────────
+
+/// Per-feed cache: 10 min per URL, same pattern as `QUOTES_CACHE`.
+static RSS_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>,
+> = std::sync::OnceLock::new();
+
+/// Validate a caller-supplied feed URL: `https://` only, no userinfo, sane
+/// length, and never a loopback/private/tailnet host — this proxies the public
+/// internet, not the tailnet.
+fn rss_url_ok(url: &str) -> bool {
+    if !url.starts_with("https://") || url.len() > 300 || url.contains('@') {
+        return false;
+    }
+    let host = url["https://".len()..]
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if host.is_empty() {
+        return false;
+    }
+    let internal = host.starts_with("localhost")
+        || host.starts_with("127.")
+        || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || host.starts_with("100.")
+        || host.ends_with(".ts.net");
+    !internal
+}
+
+/// Pull the first `href="…"` attribute value out of a fragment (Atom `<link>`
+/// elements are self-closing, so `xml_tag` can't see them).
+fn atom_href(frag: &str) -> Option<&str> {
+    let start = frag.find("href=\"")? + "href=\"".len();
+    let end = frag[start..].find('"')? + start;
+    Some(&frag[start..end])
+}
+
+/// `GET /api/rss?url=<feed>` — server-side fetch + parse of an arbitrary public
+/// RSS/Atom feed (feeds have no CORS). `{feed, items: [{title, link, ts}]}`,
+/// max 12 items, cached 10 min per URL.
+pub async fn get_rss(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let url = params.get("url").map(|s| s.trim().to_owned()).unwrap_or_default();
+    if !rss_url_ok(&url) {
+        return (
+            StatusCode::BAD_REQUEST,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            r#"{"error":"url must be a public https:// feed (max 300 chars, no userinfo, no local/tailnet hosts)"}"#
+                .to_owned(),
+        )
+            .into_response();
+    }
+
+    let cache = RSS_CACHE.get_or_init(Default::default);
+    if let Some((at, body)) = cache.lock().unwrap().get(&url).cloned()
+        && at.elapsed() < Duration::from_secs(600)
+    {
+        return ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response();
+    }
+
+    let raw = match state
+        .http
+        .get(&url)
+        .header(axum::http::header::USER_AGENT.as_str(), "Mozilla/5.0")
+        .timeout(Duration::from_secs(6))
+        .send()
+        .await
+    {
+        Ok(r) => r.text().await.unwrap_or_default(),
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                format!("{{\"error\":\"feed unreachable: {e}\"}}"),
+            )
+                .into_response();
+        }
+    };
+    // Cap the body at 512 KB (char-boundary-safe) before parsing.
+    let mut cap = 512 * 1024;
+    let xml = if raw.len() > cap {
+        while !raw.is_char_boundary(cap) {
+            cap -= 1;
+        }
+        &raw[..cap]
+    } else {
+        raw.as_str()
+    };
+
+    // RSS `<item>` fragments first; fall back to Atom `<entry>`.
+    let mut frags: Vec<&str> = xml.split("<item>").skip(1).collect();
+    if frags.is_empty() {
+        frags = xml.split("<entry>").skip(1).collect();
+    }
+
+    let mut items: Vec<serde_json::Value> = Vec::new();
+    for frag in frags.into_iter().take(12) {
+        let title = xml_tag(frag, "title")
+            .map(|t| {
+                let t = t.trim();
+                let t = t
+                    .strip_prefix("<![CDATA[")
+                    .and_then(|x| x.strip_suffix("]]>"))
+                    .unwrap_or(t);
+                xml_unescape(t.trim())
+            })
+            .unwrap_or_default();
+        // RSS: plain `<link>text</link>`. Atom: self-closing `<link href="…"/>`.
+        let link = match xml_tag(frag, "link").map(str::trim).filter(|l| !l.is_empty()) {
+            Some(l) => l.to_owned(),
+            None => atom_href(frag).unwrap_or_default().to_owned(),
+        };
+        let ts = xml_tag(frag, "pubDate")
+            .or_else(|| xml_tag(frag, "updated"))
+            .or_else(|| xml_tag(frag, "published"))
+            .map(str::trim)
+            .unwrap_or("");
+        items.push(serde_json::json!({
+            "title": title,
+            "link": link,
+            "ts": ts,
+        }));
+    }
+
+    let body = serde_json::json!({ "feed": url, "items": items }).to_string();
+    cache
+        .lock()
+        .unwrap()
+        .insert(url, (std::time::Instant::now(), body.clone()));
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response()
+}
+
 // ── GET /board (kanban over the Command Center) ──────────────────────────────
 
 /// The task board — a static shell; all data flows through `/hub/cc/*` from

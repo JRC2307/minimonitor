@@ -22,7 +22,7 @@
   </header>
 
   <div class="shell">
-    <!-- command bar: search apps & tasks, or `>` to ask hermes -->
+    <!-- command bar: search apps & tasks, or `>` to ask hermes — global -->
     <div class="cmd" id="cmd">
       <span class="cmd-prompt" aria-hidden="true">&#10095;</span>
       <input id="q" type="text" placeholder="search · &gt; ask" autocomplete="off"
@@ -44,133 +44,167 @@
       </div>
     </section>
 
-    <!-- pulse: consolidated notifications (hermes unread + apps down) -->
-    <section class="pulse" id="pulse" hidden aria-label="notifications">
-      <h2 class="sec-head"><span>pulse</span></h2>
-      <div class="pulse-list" id="pulse-list"></div>
-    </section>
+    <main class="screens" id="screens">
 
-    <!-- widget board — adaptive bento: live data first, all sizes earn their keep -->
-    <section class="wgrid" id="widgets" aria-label="widgets">
-      <a class="wg wg-heart" id="w-heart" style="--h:355" href="https://caguaserver.tail82f3c6.ts.net:3016" hidden>
-        <span class="heart-left">
-          <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-pulse" xlink:href="#i-pulse"/></svg>corazón</span>
-          <span class="wg-v"><span id="w-heart-v">—</span><span class="wg-unit">bpm</span></span>
-          <span class="wg-s" id="w-heart-s">&nbsp;</span>
-        </span>
-        <svg class="wg-spark" id="w-heart-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"></svg>
-      </a>
-      <!-- marcar — one-tap context marks into the vitals journal (what am I doing now) -->
-      <div class="wg wg-wide wg-marks" id="w-marks" style="--h:355">
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-pulse" xlink:href="#i-pulse"/></svg>marcar
-          <span class="marks-status" id="w-marks-status"></span></span>
-        <div class="marks-row" id="w-marks-tags">
-          <button type="button" class="mkch" data-tag="eat" style="--c:#FBBF24">comer</button>
-          <button type="button" class="mkch" data-tag="drink" style="--c:#38BDF8">beber</button>
-          <button type="button" class="mkch" data-tag="winddown" style="--c:#5EEAD4">relajar</button>
-          <button type="button" class="mkch" data-tag="stress" style="--c:#FB923C">estr&eacute;s</button>
-          <button type="button" class="mkch" data-tag="driving" style="--c:#60A5FA">manejar</button>
-          <button type="button" class="mkch" data-tag="smoke" style="--c:#A78BFA">fumar</button>
-          <button type="button" class="mkch" data-tag="exercise" style="--c:#34D399">ejercicio</button>
-        </div>
-        <div class="marks-row marks-when" id="w-marks-when">
-          <button type="button" class="mkwh on" data-off="0">ahora</button>
-          <button type="button" class="mkwh" data-off="900">-15m</button>
-          <button type="button" class="mkwh" data-off="1800">-30m</button>
-          <button type="button" class="mkwh" data-off="3600">-1h</button>
-          <button type="button" class="mkwh" data-off="7200">-2h</button>
-        </div>
-      </div>
-      <a class="wg wg-chip" id="w-correo" style="--h:38" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
-        <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-bell" xlink:href="#i-bell"/></svg></span>
-        <span class="chip-tx">
-          <span class="wg-v" id="w-correo-v">—</span>
-          <span class="wg-s" id="w-correo-s">correo</span>
-        </span>
-      </a>
-      <a class="wg wg-chip" id="w-whats" style="--h:145" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
-        <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-speech" xlink:href="#i-speech"/></svg></span>
-        <span class="chip-tx">
-          <span class="wg-v" id="w-whats-v">—</span>
-          <span class="wg-s" id="w-whats-s">whatsapp</span>
-        </span>
-      </a>
-      <a class="wg wg-chip" id="w-wx" style="--h:205" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
-        <span class="chip-ico"><svg viewBox="0 0 24 24"><use id="w-wx-icon" href="#i-sun" xlink:href="#i-sun"/></svg></span>
-        <span class="chip-tx">
-          <span class="wg-v" id="w-wx-v">—</span>
-          <span class="wg-s" id="w-wx-s">cdmx</span>
-        </span>
-      </a>
-      <a class="wg wg-chip wg-locked" id="w-money" style="--h:45" href="https://caguaserver.tail82f3c6.ts.net:8789">
-        <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg></span>
-        <span class="chip-tx">
-          <span class="wg-v" id="w-money-v">&bull;&bull;&bull;&bull;</span>
-          <span class="wg-s" id="w-money-s">money · tap to unlock</span>
-        </span>
-        <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg>
-      </a>
-      <a class="wg wg-wide wg-locked" id="w-market" style="--h:95" href="http://caguaserver.tail82f3c6.ts.net:3010">
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-chart" xlink:href="#i-chart"/></svg>mercado · mis posiciones
-          <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg></span>
-        <span class="mkt" id="w-market-list"></span>
-        <span class="wg-s" id="w-market-s">tap to unlock</span>
-      </a>
-      <a class="wg wg-strip" id="w-fx" style="--h:170" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>peso</span>
-        <span class="fx-rates" id="w-fx-t"></span>
-      </a>
-      <a class="wg wg-strip" id="w-next-1" style="--h:265" href="/board" hidden>
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>next</span>
-        <span class="strip-tx" id="w-next-1-v">—</span>
-        <span class="strip-sub" id="w-next-1-s"></span>
-      </a>
-      <div class="wg wg-wide" id="w-news" style="--h:220" hidden>
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-bolt" xlink:href="#i-bolt"/></svg>titulares</span>
-        <div class="wg-news" id="w-news-list"></div>
-      </div>
-    </section>
+      <!-- ═ inicio — the snapshot ═ -->
+      <section class="screen" id="scr-home">
+        <section class="pulse wg-fold" id="pulse" data-fold="pulse" hidden aria-label="notifications">
+          <h2 class="sec-head"><span>pulse</span><span class="fold-n" id="pulse-n"></span>
+            <button type="button" class="fold-btn" data-fold-btn="pulse" aria-label="collapse"></button></h2>
+          <div class="fold-body pulse-list" id="pulse-list"></div>
+        </section>
 
-    <main class="cats" id="cats">
-      {% for g in groups %}
-      <section class="cat">
-        <h2 class="sec-head"><span>{{ g.title }}</span></h2>
-        <div class="grid">
-          {% for t in g.tiles %}
-          <a class="tile{% if t.has_led %}{% if t.up %} up{% else %} down{% endif %}{% endif %}{% if t.private %} priv{% endif %}"
-             style="--h:{{ t.hue }};--i:{{ t.idx }}"
-             href="{{ t.url }}" data-slug="{{ t.slug }}" data-tag="{{ t.tagline }}" data-cat="{{ g.title }}">
-            <span class="squircle">
-              <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-{{ t.icon }}" xlink:href="#i-{{ t.icon }}"/></svg>
-              {% if t.has_led %}<span class="led" title="{% if t.up %}up{% else %}down{% endif %}"></span>{% endif %}
-              {% if t.private %}<span class="lock" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg></span>{% endif %}
+        <section class="wgrid" id="widgets" aria-label="widgets">
+          <a class="wg wg-heart wg-fold" id="w-heart" data-fold="heart" style="--h:355" href="https://caguaserver.tail82f3c6.ts.net:3016" hidden>
+            <span class="heart-left">
+              <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-pulse" xlink:href="#i-pulse"/></svg>corazón
+                <button type="button" class="fold-btn" data-fold-btn="heart" aria-label="collapse"></button></span>
+              <span class="wg-v"><span id="w-heart-v">—</span><span class="wg-unit">bpm</span></span>
+              <span class="wg-s fold-body" id="w-heart-s">&nbsp;</span>
             </span>
-            <span class="label">{{ t.name }}</span>
-            <span class="tag">{{ t.tagline }}</span>
+            <svg class="wg-spark fold-body" id="w-heart-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"></svg>
           </a>
-          {% endfor %}
+          <a class="wg wg-chip" id="w-correo" style="--h:38" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
+            <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-bell" xlink:href="#i-bell"/></svg></span>
+            <span class="chip-tx">
+              <span class="wg-v" id="w-correo-v">—</span>
+              <span class="wg-s" id="w-correo-s">correo</span>
+            </span>
+          </a>
+          <a class="wg wg-chip" id="w-whats" style="--h:145" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
+            <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-speech" xlink:href="#i-speech"/></svg></span>
+            <span class="chip-tx">
+              <span class="wg-v" id="w-whats-v">—</span>
+              <span class="wg-s" id="w-whats-s">whatsapp</span>
+            </span>
+          </a>
+          <a class="wg wg-chip" id="w-wx" style="--h:205" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
+            <span class="chip-ico"><svg viewBox="0 0 24 24"><use id="w-wx-icon" href="#i-sun" xlink:href="#i-sun"/></svg></span>
+            <span class="chip-tx">
+              <span class="wg-v" id="w-wx-v">—</span>
+              <span class="wg-s" id="w-wx-s">cdmx</span>
+            </span>
+          </a>
+          <a class="wg wg-chip wg-locked" id="w-money" style="--h:45" href="https://caguaserver.tail82f3c6.ts.net:8789">
+            <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg></span>
+            <span class="chip-tx">
+              <span class="wg-v" id="w-money-v">&bull;&bull;&bull;&bull;</span>
+              <span class="wg-s" id="w-money-s">money · tap to unlock</span>
+            </span>
+            <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg>
+          </a>
+          <a class="wg wg-chip wg-locked" id="w-mkt-mini" style="--h:95" href="#mercado">
+            <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-chart" xlink:href="#i-chart"/></svg></span>
+            <span class="chip-tx">
+              <span class="wg-v" id="w-mkt-mini-v">&bull;&bull;&bull;&bull;</span>
+              <span class="wg-s" id="w-mkt-mini-s">mercado · tap to unlock</span>
+            </span>
+            <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg>
+          </a>
+          <a class="wg wg-strip" id="w-fx" style="--h:170" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
+            <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>peso</span>
+            <span class="fx-rates" id="w-fx-t"></span>
+          </a>
+          <a class="wg wg-strip" id="w-next-1" style="--h:265" href="/board" hidden>
+            <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>next</span>
+            <span class="strip-tx" id="w-next-1-v">—</span>
+            <span class="strip-sub" id="w-next-1-s"></span>
+          </a>
+        </section>
+      </section>
+
+      <!-- ═ mercado — full live tickers ═ -->
+      <section class="screen" id="scr-market" hidden>
+        <div class="scr-head">
+          <h2 class="sec-head"><span>mercado</span></h2>
+          <div class="seg" id="mkt-seg" role="group" aria-label="refresh mode">
+            <button type="button" class="seg-b" data-mode="live">en vivo</button>
+            <button type="button" class="seg-b" data-mode="5min">5 min</button>
+            <button type="button" class="seg-b" data-mode="manual">al entrar</button>
+          </div>
+        </div>
+        <div class="wg wg-wide wg-locked" id="w-market" style="--h:95">
+          <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-chart" xlink:href="#i-chart"/></svg>mis posiciones
+            <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg>
+            <button type="button" class="mkt-refresh" id="mkt-refresh" aria-label="refresh">&#8635;</button></span>
+          <span class="mkt" id="w-market-list"></span>
+          <span class="wg-s" id="w-market-s">tap to unlock</span>
         </div>
       </section>
-      {% endfor %}
 
-      <!-- task search results (Command Center, via /hub/cc) -->
-      <section class="cat task-hits" id="task-hits" hidden>
-        <h2 class="sec-head"><span>tasks</span></h2>
-        <div class="hit-list" id="hit-list"></div>
+      <!-- ═ noticias — tunable feeds ═ -->
+      <section class="screen" id="scr-news" hidden>
+        <div class="scr-head">
+          <h2 class="sec-head"><span>noticias</span></h2>
+        </div>
+        <div class="feeds" id="feeds"></div>
+        <form class="feed-add" id="feed-add">
+          <input id="feed-name" type="text" placeholder="nombre" maxlength="14" autocomplete="off">
+          <input id="feed-url" type="url" placeholder="https://…/rss.xml" autocomplete="off">
+          <button type="submit" class="ask-btn">+ feed</button>
+        </form>
+        <div class="wg wg-wide" id="w-news" style="--h:220">
+          <div class="wg-news" id="w-news-list"></div>
+        </div>
       </section>
 
-      <p class="no-hits" id="no-hits" hidden>no matches — <kbd>&#9166;</kbd> asks hermes</p>
+      <!-- ═ apps — the launcher, one screen away ═ -->
+      <section class="screen" id="scr-apps" hidden>
+        <div class="cats" id="cats">
+          {% for g in groups %}
+          <section class="cat">
+            <h2 class="sec-head"><span>{{ g.title }}</span></h2>
+            <div class="grid">
+              {% for t in g.tiles %}
+              <a class="tile{% if t.has_led %}{% if t.up %} up{% else %} down{% endif %}{% endif %}{% if t.private %} priv{% endif %}"
+                 style="--h:{{ t.hue }};--i:{{ t.idx }}"
+                 href="{{ t.url }}" data-slug="{{ t.slug }}" data-tag="{{ t.tagline }}" data-cat="{{ g.title }}">
+                <span class="squircle">
+                  <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-{{ t.icon }}" xlink:href="#i-{{ t.icon }}"/></svg>
+                  {% if t.has_led %}<span class="led" title="{% if t.up %}up{% else %}down{% endif %}"></span>{% endif %}
+                  {% if t.private %}<span class="lock" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg></span>{% endif %}
+                </span>
+                <span class="label">{{ t.name }}</span>
+                <span class="tag">{{ t.tagline }}</span>
+              </a>
+              {% endfor %}
+            </div>
+          </section>
+          {% endfor %}
+
+          <!-- task search results (Command Center, via /hub/cc) -->
+          <section class="cat task-hits" id="task-hits" hidden>
+            <h2 class="sec-head"><span>tasks</span></h2>
+            <div class="hit-list" id="hit-list"></div>
+          </section>
+
+          <p class="no-hits" id="no-hits" hidden>no matches — <kbd>&#9166;</kbd> asks hermes</p>
+
+          <!-- sistema — monitor views -->
+          <section class="cat">
+            <h2 class="sec-head"><span>sistema</span></h2>
+            <nav class="sysrow" aria-label="system">
+              <a href="/board"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>board</a>
+              <a href="/inventory"><svg viewBox="0 0 24 24"><use href="#i-nodes" xlink:href="#i-nodes"/></svg>fleet</a>
+              <a href="/ports"><svg viewBox="0 0 24 24"><use href="#i-plug" xlink:href="#i-plug"/></svg>ports</a>
+              <a href="/paths"><svg viewBox="0 0 24 24"><use href="#i-route" xlink:href="#i-route"/></svg>paths</a>
+              <a href="/workloads"><svg viewBox="0 0 24 24"><use href="#i-chip" xlink:href="#i-chip"/></svg>loads</a>
+              <a href="/observability"><svg viewBox="0 0 24 24"><use href="#i-eye" xlink:href="#i-eye"/></svg>obs</a>
+            </nav>
+          </section>
+        </div>
+      </section>
+
     </main>
   </div>
 
-  <nav class="dock" aria-label="system">
-    <a href="/board" title="task board" class="dock-board"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg></a>
-    <span class="dock-sep" aria-hidden="true"></span>
-    <a href="/inventory" title="fleet inventory"><svg viewBox="0 0 24 24"><use href="#i-nodes" xlink:href="#i-nodes"/></svg></a>
-    <a href="/ports" title="ports"><svg viewBox="0 0 24 24"><use href="#i-plug" xlink:href="#i-plug"/></svg></a>
-    <a href="/paths" title="path health"><svg viewBox="0 0 24 24"><use href="#i-route" xlink:href="#i-route"/></svg></a>
-    <a href="/workloads" title="workloads"><svg viewBox="0 0 24 24"><use href="#i-chip" xlink:href="#i-chip"/></svg></a>
-    <a href="/observability" title="observability"><svg viewBox="0 0 24 24"><use href="#i-eye" xlink:href="#i-eye"/></svg></a>
+  <!-- bottom tab menu — the SPA's compass -->
+  <nav class="tabbar" aria-label="screens">
+    <a href="#inicio" class="tab on" data-scr="home"><svg viewBox="0 0 24 24"><use href="#i-house" xlink:href="#i-house"/></svg><span>inicio</span></a>
+    <a href="#mercado" class="tab" data-scr="market"><svg viewBox="0 0 24 24"><use href="#i-chart" xlink:href="#i-chart"/></svg><span>mercado</span></a>
+    <a href="#noticias" class="tab" data-scr="news"><svg viewBox="0 0 24 24"><use href="#i-bolt" xlink:href="#i-bolt"/></svg><span>noticias</span></a>
+    <a href="#apps" class="tab" data-scr="apps"><svg viewBox="0 0 24 24"><use href="#i-app" xlink:href="#i-app"/></svg><span>apps</span></a>
+    <a href="/board" class="tab"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg><span>board</span></a>
   </nav>
 
   <!-- glyph sprite — inlined so <use> works everywhere, incl. old Android -->

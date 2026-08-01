@@ -214,6 +214,7 @@ impl Catalog {
                     "https://puertacaja-popup.jrckc23.workers.dev", "door", 28),
                 ext("work", "stay", "stay", "rental site (demo)",
                     "https://stay.javierr.com", "house", 185),
+                tls("work", "estudio", "estudio", "brief de producción de video", 8798, "camera", 42),
                 srv("work", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
                 srv("work", "crux-playground", "crux", "playground", 3012, "hold", 25),
                 srv("work", "iprep", "iprep", "interview prep", 3011, "cap", 210),

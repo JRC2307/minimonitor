@@ -396,6 +396,20 @@ impl Catalog {
                 },
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
+                // hermes dashboard (official web UI) on the mini — binds the
+                // tailscale IP directly so the app's own auth gate engages
+                StoreApp {
+                    slug: "hermes-app".to_owned(),
+                    name: "hermes·app".to_owned(),
+                    tagline: "dashboard oficial".to_owned(),
+                    url: "http://100.105.239.50:9119".to_owned(),
+                    port: Some(9119),
+                    host: Some("mac".to_owned()),
+                    icon: "bot".to_owned(),
+                    hue: 280,
+                    category: "dev".to_owned(),
+                    private: false,
+                },
                 // hermes agent TUI on the mini — cookie-auth proxy binds loopback,
                 // fronted by tailscale serve → explicit HTTPS like calendario
                 StoreApp {

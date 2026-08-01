@@ -38,11 +38,13 @@ fn json_error(status: StatusCode, msg: &str) -> Response {
 
 /// Forward `method /api/{rest}?{query}` to `base`, enforcing `allowed` methods.
 /// `basic_auth` (`"user:pass"`) is presented upstream when the sibling service
-/// has its own credential (cuentas fails closed since 2026-07-24).
+/// has its own credential (cuentas fails closed since 2026-07-24);
+/// `bearer_auth` likewise for token-authed siblings (portfolio).
 async fn proxy(
     state: &AppState,
     base: &str,
     basic_auth: Option<&str>,
+    bearer_auth: Option<&str>,
     allowed: &[Method],
     method: Method,
     rest: &str,
@@ -63,6 +65,9 @@ async fn proxy(
     if let Some(cred) = basic_auth {
         let (user, pass) = cred.split_once(':').unwrap_or((cred, ""));
         req = req.basic_auth(user, Some(pass));
+    }
+    if let Some(token) = bearer_auth {
+        req = req.bearer_auth(token);
     }
     if !body.is_empty() {
         req = req
@@ -107,6 +112,7 @@ pub async fn hub_cc(
         &state,
         &base,
         None,
+        None,
         &[Method::GET, Method::POST, Method::DELETE],
         method,
         &rest,
@@ -143,6 +149,7 @@ pub async fn hub_cuentas(
         &state,
         &base,
         auth.as_deref(),
+        None,
         &[Method::GET],
         method,
         &rest,
@@ -161,6 +168,43 @@ fn hermes_post_allowed(rest: &str) -> bool {
         || (rest.starts_with("channels/") && (rest.ends_with("/model") || rest.ends_with("/read")))
 }
 
+/// `/hub/portfolio/{*rest}` — portfolio (inversiones). Read-only and money
+/// PIN-gated like cuentas; the service's own bearer token is injected
+/// server-side so it never reaches the browser.
+pub async fn hub_portfolio(
+    State(state): State<AppState>,
+    method: Method,
+    Path(rest): Path<String>,
+    RawQuery(query): RawQuery,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Some(pin) = state.money_pin.clone() else {
+        return json_error(StatusCode::NOT_FOUND, "money proxy disabled");
+    };
+    let presented = headers
+        .get("x-money-pin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if presented != pin {
+        return json_error(StatusCode::UNAUTHORIZED, "money pin required");
+    }
+    let base = state.portfolio_url.clone();
+    let token = state.portfolio_token.clone();
+    proxy(
+        &state,
+        &base,
+        None,
+        token.as_deref(),
+        &[Method::GET],
+        method,
+        &rest,
+        query,
+        body,
+    )
+    .await
+}
+
 /// `/hub/vitals/{*rest}` — vitals (WHOOP dashboard). Read-only.
 pub async fn hub_vitals(
     State(state): State<AppState>,
@@ -170,7 +214,7 @@ pub async fn hub_vitals(
     body: Bytes,
 ) -> Response {
     let base = state.vitals_url.clone();
-    proxy(&state, &base, None, &[Method::GET], method, &rest, query, body).await
+    proxy(&state, &base, None, None, &[Method::GET], method, &rest, query, body).await
 }
 
 /// `/hub/hermes/{*rest}` — hermeshub. GET everywhere; POST only on the
@@ -188,5 +232,5 @@ pub async fn hub_hermes(
         &[Method::GET]
     };
     let base = state.hermeshub_url.clone();
-    proxy(&state, &base, None, allowed, method, &rest, query, body).await
+    proxy(&state, &base, None, None, allowed, method, &rest, query, body).await
 }

@@ -72,6 +72,8 @@ pub fn build_router(db_path: PathBuf) -> Router {
         cuentas_basic_auth: None,
         hermeshub_url: "http://127.0.0.1:8796".to_owned(),
         vitals_url: "http://127.0.0.1:3016".to_owned(),
+        portfolio_url: "http://127.0.0.1:3010".to_owned(),
+        portfolio_token: None,
         money_pin: None,
     })
 }
@@ -119,6 +121,8 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/hub/cuentas/{*rest}", any(hub::hub_cuentas))
         .route("/hub/hermes/{*rest}", any(hub::hub_hermes))
         .route("/hub/vitals/{*rest}", any(hub::hub_vitals))
+        .route("/hub/portfolio/{*rest}", any(hub::hub_portfolio))
+        .route("/api/news", get(routes::get_news))
         // HTML views (askama, server-rendered)
         .route("/inventory", get(routes::get_index))
         .route("/node/{id}", get(routes::get_node_html))
@@ -182,6 +186,8 @@ pub async fn run_with(
         cuentas_basic_auth: cfg.cuentas_basic_auth.clone(),
         hermeshub_url: cfg.hermeshub_url.clone(),
         vitals_url: cfg.vitals_url.clone(),
+        portfolio_url: cfg.portfolio_url.clone(),
+        portfolio_token: cfg.portfolio_token.clone(),
         money_pin: cfg.money_pin.clone(),
     });
 
@@ -757,6 +763,8 @@ mod tests {
             cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
             vitals_url: "http://127.0.0.1:1".to_owned(),
+            portfolio_url: "http://127.0.0.1:1".to_owned(),
+            portfolio_token: None,
             money_pin: Some("4242".to_owned()),
         })
     }
@@ -1510,6 +1518,8 @@ mod tests {
             cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
             vitals_url: "http://127.0.0.1:1".to_owned(),
+            portfolio_url: "http://127.0.0.1:1".to_owned(),
+            portfolio_token: None,
             money_pin: Some("4242".to_owned()),
         })
     }
@@ -1670,6 +1680,8 @@ mod tests {
             cuentas_basic_auth: Some("cagua:secreta".to_owned()),
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
             vitals_url: "http://127.0.0.1:1".to_owned(),
+            portfolio_url: "http://127.0.0.1:1".to_owned(),
+            portfolio_token: None,
             money_pin: Some("4242".to_owned()),
         });
         let req = Request::builder()
@@ -1706,6 +1718,8 @@ mod tests {
             cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
             vitals_url: "http://127.0.0.1:1".to_owned(),
+            portfolio_url: "http://127.0.0.1:1".to_owned(),
+            portfolio_token: None,
             money_pin: None,
         });
         let req = Request::builder()

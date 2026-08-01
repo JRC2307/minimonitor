@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="stylesheet" href="/static/store.css?v=5">
+  <link rel="stylesheet" href="/static/store.css?v=6">
 </head>
 <body class="store">
   <div class="grain" aria-hidden="true"></div>
@@ -79,11 +79,28 @@
         <span class="wg-v"><span id="w-money-v">&bull;&bull;&bull;&bull;</span></span>
         <span class="wg-s" id="w-money-s">tap to unlock</span>
       </a>
+      <a class="wg wg-locked" id="w-portfolio" style="--h:95" href="http://caguaserver.tail82f3c6.ts.net:3010">
+        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-chart" xlink:href="#i-chart"/></svg>portfolio
+          <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg></span>
+        <span class="wg-v"><span id="w-portfolio-v">&bull;&bull;&bull;&bull;</span></span>
+        <span class="wg-t wg-picks" id="w-portfolio-t"></span>
+        <span class="wg-s" id="w-portfolio-s">tap to unlock</span>
+      </a>
+      <a class="wg" id="w-fx" style="--h:170" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
+        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>peso</span>
+        <span class="wg-v"><span id="w-fx-v">—</span><span class="wg-unit">mxn / usd</span></span>
+        <span class="wg-t wg-picks" id="w-fx-t"></span>
+        <span class="wg-s" id="w-fx-s">&nbsp;</span>
+      </a>
       <a class="wg" id="w-next-1" style="--h:265" href="/board" hidden>
         <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>next</span>
         <span class="wg-t" id="w-next-1-v">—</span>
         <span class="wg-s" id="w-next-1-s">&nbsp;</span>
       </a>
+      <div class="wg wg-wide" id="w-news" style="--h:220" hidden>
+        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-bolt" xlink:href="#i-bolt"/></svg>titulares</span>
+        <div class="wg-news" id="w-news-list"></div>
+      </div>
     </section>
 
     <main class="cats" id="cats">
@@ -176,6 +193,6 @@
     <button type="submit" class="pin-go" id="pin-go">unlock</button>
   </form>
 
-  <script src="/static/store.js?v=5" defer></script>
+  <script src="/static/store.js?v=6" defer></script>
 </body>
 </html>

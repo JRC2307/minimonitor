@@ -228,6 +228,9 @@ pub struct ServeConfig {
     /// hermeshub base URL for the `/hub/hermes/*` proxy (GET only).
     #[serde(default = "default_hermeshub_url")]
     pub hermeshub_url: String,
+    /// vitals (WHOOP dashboard) base URL for the `/hub/vitals/*` proxy (GET only).
+    #[serde(default = "default_vitals_url")]
+    pub vitals_url: String,
     /// PIN gating the `/hub/cuentas/*` money proxy (header `X-Money-Pin`).
     /// Unset → the money proxy is disabled entirely (money numbers never leave
     /// the server). Server-enforced — the UI lock is only presentation.
@@ -243,6 +246,9 @@ fn default_cuentas_url() -> String {
 }
 fn default_hermeshub_url() -> String {
     "http://127.0.0.1:8796".to_owned()
+}
+fn default_vitals_url() -> String {
+    "http://127.0.0.1:3016".to_owned()
 }
 
 // ─── Collect ─────────────────────────────────────────────────────────────────

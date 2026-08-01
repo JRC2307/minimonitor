@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="stylesheet" href="/static/store.css?v=7">
+  <link rel="stylesheet" href="/static/store.css?v=8">
 </head>
 <body class="store">
   <div class="grain" aria-hidden="true"></div>
@@ -60,6 +60,27 @@
         </span>
         <svg class="wg-spark" id="w-heart-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"></svg>
       </a>
+      <!-- marcar — one-tap context marks into the vitals journal (what am I doing now) -->
+      <div class="wg wg-wide wg-marks" id="w-marks" style="--h:355">
+        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-pulse" xlink:href="#i-pulse"/></svg>marcar
+          <span class="marks-status" id="w-marks-status"></span></span>
+        <div class="marks-row" id="w-marks-tags">
+          <button type="button" class="mkch" data-tag="eat" style="--c:#FBBF24">comer</button>
+          <button type="button" class="mkch" data-tag="drink" style="--c:#38BDF8">beber</button>
+          <button type="button" class="mkch" data-tag="winddown" style="--c:#5EEAD4">relajar</button>
+          <button type="button" class="mkch" data-tag="stress" style="--c:#FB923C">estr&eacute;s</button>
+          <button type="button" class="mkch" data-tag="driving" style="--c:#60A5FA">manejar</button>
+          <button type="button" class="mkch" data-tag="smoke" style="--c:#A78BFA">fumar</button>
+          <button type="button" class="mkch" data-tag="exercise" style="--c:#34D399">ejercicio</button>
+        </div>
+        <div class="marks-row marks-when" id="w-marks-when">
+          <button type="button" class="mkwh on" data-off="0">ahora</button>
+          <button type="button" class="mkwh" data-off="900">-15m</button>
+          <button type="button" class="mkwh" data-off="1800">-30m</button>
+          <button type="button" class="mkwh" data-off="3600">-1h</button>
+          <button type="button" class="mkwh" data-off="7200">-2h</button>
+        </div>
+      </div>
       <a class="wg wg-chip" id="w-correo" style="--h:38" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
         <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-bell" xlink:href="#i-bell"/></svg></span>
         <span class="chip-tx">
@@ -200,6 +221,6 @@
     <button type="submit" class="pin-go" id="pin-go">unlock</button>
   </form>
 
-  <script src="/static/store.js?v=7" defer></script>
+  <script src="/static/store.js?v=8" defer></script>
 </body>
 </html>

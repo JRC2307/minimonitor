@@ -427,6 +427,51 @@
   loadHeart();
   setInterval(loadHeart, 60000);
 
+  // ── marcar widget — one-tap context marks into the vitals journal ──────────
+  (function () {
+    var status = document.getElementById('w-marks-status');
+    var whenRow = document.getElementById('w-marks-when');
+    var tagRow = document.getElementById('w-marks-tags');
+    if (!status || !whenRow || !tagRow) return;
+    var offset = 0, statusT = 0;
+    whenRow.addEventListener('click', function (e) {
+      var b = e.target.closest('.mkwh');
+      if (!b) return;
+      offset = parseInt(b.dataset.off, 10) || 0;
+      whenRow.querySelectorAll('.mkwh').forEach(function (x) { x.classList.toggle('on', x === b); });
+    });
+    tagRow.addEventListener('click', function (e) {
+      var b = e.target.closest('.mkch');
+      if (!b || b.disabled) return;
+      var tag = b.dataset.tag;
+      var ts = Math.floor(Date.now() / 1000) - offset;
+      b.disabled = true;
+      fetch('/hub/vitals/journal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: tag, ts: ts })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) throw 0;
+        b.classList.add('sent');
+        setTimeout(function () { b.classList.remove('sent'); }, 1600);
+        var t = new Date(d.ts * 1000);
+        status.textContent = b.textContent + ' · ' +
+          ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ' ✓';
+        // reset the time row to "ahora" so a stale offset can't mislabel the next mark
+        offset = 0;
+        whenRow.querySelectorAll('.mkwh').forEach(function (x) {
+          x.classList.toggle('on', x.dataset.off === '0');
+        });
+      }).catch(function () {
+        status.textContent = 'no se pudo guardar';
+      }).finally(function () {
+        b.disabled = false;
+        clearTimeout(statusT);
+        statusT = setTimeout(function () { status.textContent = ''; }, 6000);
+      });
+    });
+  })();
+
   // ── peso widget — MXN vs world currencies (frankfurter/ECB, no key) ────────
   getJSON('https://api.frankfurter.dev/v1/latest?base=MXN&symbols=USD,EUR,GBP,JPY,BRL')
     .then(function (d) {

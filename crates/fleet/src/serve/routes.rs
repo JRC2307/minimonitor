@@ -53,6 +53,8 @@ pub struct AppState {
     pub hermeshub_url: String,
     /// vitals base URL (`/hub/vitals/*` upstream).
     pub vitals_url: String,
+    /// polybot panel base URL (`/hub/polybot/*` upstream).
+    pub polybot_url: String,
     /// portfolio base URL (`/hub/portfolio/*` upstream, money-PIN-gated).
     pub portfolio_url: String,
     /// Bearer token for the portfolio upstream.

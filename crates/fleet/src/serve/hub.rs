@@ -224,6 +224,31 @@ pub async fn hub_vitals(
     proxy(&state, &base, None, None, allowed, method, &rest, query, body).await
 }
 
+/// `/hub/polybot/{*rest}` — polybot panel. Read-only; the launcher chip only
+/// pulls `/widget` (account total + today), same tailnet exposure as the
+/// panel itself on :3006.
+pub async fn hub_polybot(
+    State(state): State<AppState>,
+    method: Method,
+    Path(rest): Path<String>,
+    RawQuery(query): RawQuery,
+    body: Bytes,
+) -> Response {
+    let base = state.polybot_url.clone();
+    proxy(
+        &state,
+        &base,
+        None,
+        None,
+        &[Method::GET],
+        method,
+        &rest,
+        query,
+        body,
+    )
+    .await
+}
+
 /// `/hub/hermes/{*rest}` — hermeshub. GET everywhere; POST only on the
 /// quick-prompt whitelist above.
 pub async fn hub_hermes(

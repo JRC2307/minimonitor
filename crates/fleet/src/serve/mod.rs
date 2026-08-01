@@ -123,6 +123,7 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/hub/vitals/{*rest}", any(hub::hub_vitals))
         .route("/hub/portfolio/{*rest}", any(hub::hub_portfolio))
         .route("/api/news", get(routes::get_news))
+        .route("/api/quotes", get(routes::get_quotes))
         // HTML views (askama, server-rendered)
         .route("/inventory", get(routes::get_index))
         .route("/node/{id}", get(routes::get_node_html))

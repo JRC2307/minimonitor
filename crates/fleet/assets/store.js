@@ -4,6 +4,7 @@
   'use strict';
 
   var HERMES_URL = 'https://caguaserver.tail82f3c6.ts.net:8796';
+  function hermesChat(name) { return HERMES_URL + '/#c/' + encodeURIComponent(name); }
 
   // ── clock ──────────────────────────────────────────────────────────────────
   var clock = document.getElementById('clock');
@@ -290,7 +291,7 @@
     (lastChannels || []).forEach(function (c) {
       if (!c.unread || c.name === 'quick' || dismissed['ch:' + c.name]) return;
       items.push('<div class="pulse-it" style="--h:275">' +
-        '<a class="pulse-main" href="' + esc(HERMES_URL) + '">' +
+        '<a class="pulse-main" href="' + esc(HERMES_URL + '/#c/' + encodeURIComponent(c.name)) + '">' +
         '<span class="pulse-dot"></span>' +
         '<span class="pulse-body"><span class="pulse-name">' + esc(c.name) +
         '<span class="pulse-time">' + esc(relTime(c.last_ts)) + '</span>' +
@@ -375,6 +376,7 @@
         document.getElementById('w-correo-s').textContent =
           'correo ' + (reds ? 'por responder' : 'nuevos') + ' · ' + relTime(c.last_ts);
         var wc = document.getElementById('w-correo');
+        wc.href = hermesChat('correo');
         wc.classList.toggle('wg-zero', !n);
         show(wc);
       }
@@ -386,6 +388,7 @@
         document.getElementById('w-whats-s').textContent =
           'whatsapp esperan · ' + relTime(c.last_ts);
         var ww = document.getElementById('w-whats');
+        ww.href = hermesChat('pulso');
         ww.classList.toggle('wg-zero', !wn);
         show(ww);
       }
@@ -804,6 +807,7 @@
         if (prompt) sendAsk(prompt);
         return;
       }
+      if (!q.value.trim()) return; // empty search: Enter is a no-op
       var vis = visibleTiles();
       var pick = vis[sel >= 0 ? sel : 0];
       if (pick) { window.location.href = pick.href; return; }

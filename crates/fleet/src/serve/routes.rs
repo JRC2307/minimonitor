@@ -414,6 +414,109 @@ pub async fn get_news(State(state): State<AppState>) -> Response {
     ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response()
 }
 
+// ── GET /api/quotes (live market quotes for the portfolio ticker board) ──────
+
+/// Quotes cache: 5 min per normalized symbol set. Market data is public; the
+/// PRIVATE part (which tickers the owner holds) only reaches this endpoint
+/// after the client has unlocked the portfolio with the money PIN.
+static QUOTES_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>,
+> = std::sync::OnceLock::new();
+
+/// Fetch one symbol's Yahoo v8 chart meta → quote JSON (None on any miss).
+async fn fetch_quote(http: reqwest::Client, symbol: String) -> Option<serde_json::Value> {
+    let url = format!(
+        "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=2d"
+    );
+    let resp = http
+        .get(&url)
+        .header(axum::http::header::USER_AGENT.as_str(), "Mozilla/5.0")
+        .timeout(Duration::from_secs(6))
+        .send()
+        .await
+        .ok()?;
+    let v: serde_json::Value = resp.json().await.ok()?;
+    let meta = v.pointer("/chart/result/0/meta")?;
+    let price = meta.get("regularMarketPrice")?.as_f64()?;
+    let prev = meta.get("chartPreviousClose").and_then(|x| x.as_f64());
+    let change_pct = prev
+        .filter(|p| *p > 0.0)
+        .map(|p| (price - p) / p * 100.0);
+    let exchange = meta
+        .get("exchangeName")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    // Trading now? Crypto (CCC) runs 24/7; otherwise inside the regular session.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let regular = meta.pointer("/currentTradingPeriod/regular");
+    let in_session = regular
+        .and_then(|r| {
+            let start = r.get("start")?.as_i64()?;
+            let end = r.get("end")?.as_i64()?;
+            Some(now >= start && now < end)
+        })
+        .unwrap_or(false);
+    let trading = exchange == "CCC" || in_session;
+    Some(serde_json::json!({
+        "symbol": meta.get("symbol").and_then(|x| x.as_str()).unwrap_or(&symbol),
+        "price": price,
+        "prevClose": prev,
+        "changePct": change_pct,
+        "trading": trading,
+        "crypto": exchange == "CCC",
+        "currency": meta.get("currency").and_then(|x| x.as_str()).unwrap_or(""),
+    }))
+}
+
+/// `GET /api/quotes?symbols=RTX,XLE,BTC-USD` — batched Yahoo quotes with day
+/// change and an is-it-trading flag. Cached 5 min per symbol set, ≤20 symbols.
+pub async fn get_quotes(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let raw = params.get("symbols").cloned().unwrap_or_default();
+    let mut symbols: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty() && s.len() <= 12 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.'))
+        .take(20)
+        .collect();
+    symbols.dedup();
+    if symbols.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            r#"{"error":"symbols required"}"#.to_owned(),
+        )
+            .into_response();
+    }
+
+    let key = symbols.join(",");
+    let cache = QUOTES_CACHE.get_or_init(Default::default);
+    if let Some((at, body)) = cache.lock().unwrap().get(&key).cloned()
+        && at.elapsed() < Duration::from_secs(300)
+    {
+        return ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response();
+    }
+
+    let tasks: Vec<_> = symbols
+        .iter()
+        .map(|sym| fetch_quote(state.http.clone(), sym.clone()))
+        .collect();
+    let results = futures_util::future::join_all(tasks).await;
+    let quotes: Vec<serde_json::Value> = results.into_iter().flatten().collect();
+
+    let body = serde_json::json!({ "quotes": quotes }).to_string();
+    cache
+        .lock()
+        .unwrap()
+        .insert(key, (std::time::Instant::now(), body.clone()));
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response()
+}
+
 // ── GET /board (kanban over the Command Center) ──────────────────────────────
 
 /// The task board — a static shell; all data flows through `/hub/cc/*` from

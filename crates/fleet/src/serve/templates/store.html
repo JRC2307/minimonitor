@@ -8,17 +8,17 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="stylesheet" href="/static/store.css?v=6">
+  <link rel="stylesheet" href="/static/store.css?v=7">
 </head>
 <body class="store">
   <div class="grain" aria-hidden="true"></div>
   <div class="aurora" aria-hidden="true"></div>
 
   <header class="os-head">
-    <div class="wordmark"><span class="dot"></span>caguastore</div>
-    <div class="clock" id="clock">--:--</div>
-    <div class="date" id="date">&nbsp;</div>
-    <a class="sys" href="/observability">{{ up_count }}/{{ led_count }} up · caguaserver</a>
+    <span class="dot" aria-hidden="true"></span>
+    <span class="clock" id="clock">--:--</span>
+    <span class="date" id="date">&nbsp;</span>
+    <a class="sys" href="/observability">{{ up_count }}/{{ led_count }} up</a>
   </header>
 
   <div class="shell">
@@ -50,52 +50,59 @@
       <div class="pulse-list" id="pulse-list"></div>
     </section>
 
-    <!-- widget board — the key surface: live squares of the data that matters -->
+    <!-- widget board — adaptive bento: live data first, all sizes earn their keep -->
     <section class="wgrid" id="widgets" aria-label="widgets">
-      <a class="wg" id="w-heart" style="--h:355" href="https://caguaserver.tail82f3c6.ts.net:3016" hidden>
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-pulse" xlink:href="#i-pulse"/></svg>corazón</span>
-        <span class="wg-v"><span id="w-heart-v">—</span><span class="wg-unit">bpm</span></span>
+      <a class="wg wg-heart" id="w-heart" style="--h:355" href="https://caguaserver.tail82f3c6.ts.net:3016" hidden>
+        <span class="heart-left">
+          <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-pulse" xlink:href="#i-pulse"/></svg>corazón</span>
+          <span class="wg-v"><span id="w-heart-v">—</span><span class="wg-unit">bpm</span></span>
+          <span class="wg-s" id="w-heart-s">&nbsp;</span>
+        </span>
         <svg class="wg-spark" id="w-heart-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"></svg>
-        <span class="wg-s" id="w-heart-s">&nbsp;</span>
       </a>
-      <a class="wg" id="w-correo" style="--h:38" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-bell" xlink:href="#i-bell"/></svg>correo</span>
-        <span class="wg-v"><span id="w-correo-v">—</span></span>
-        <span class="wg-s" id="w-correo-s">por responder</span>
+      <a class="wg wg-chip" id="w-correo" style="--h:38" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
+        <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-bell" xlink:href="#i-bell"/></svg></span>
+        <span class="chip-tx">
+          <span class="wg-v" id="w-correo-v">—</span>
+          <span class="wg-s" id="w-correo-s">correo</span>
+        </span>
       </a>
-      <a class="wg" id="w-whats" style="--h:145" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-speech" xlink:href="#i-speech"/></svg>whatsapp</span>
-        <span class="wg-v"><span id="w-whats-v">—</span></span>
-        <span class="wg-s" id="w-whats-s">chats esperan</span>
+      <a class="wg wg-chip" id="w-whats" style="--h:145" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
+        <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-speech" xlink:href="#i-speech"/></svg></span>
+        <span class="chip-tx">
+          <span class="wg-v" id="w-whats-v">—</span>
+          <span class="wg-s" id="w-whats-s">whatsapp</span>
+        </span>
       </a>
-      <a class="wg" id="w-wx" style="--h:205" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use id="w-wx-icon" href="#i-sun" xlink:href="#i-sun"/></svg>cdmx</span>
-        <span class="wg-v"><span id="w-wx-v">—</span></span>
-        <span class="wg-s" id="w-wx-s">&nbsp;</span>
+      <a class="wg wg-chip" id="w-wx" style="--h:205" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
+        <span class="chip-ico"><svg viewBox="0 0 24 24"><use id="w-wx-icon" href="#i-sun" xlink:href="#i-sun"/></svg></span>
+        <span class="chip-tx">
+          <span class="wg-v" id="w-wx-v">—</span>
+          <span class="wg-s" id="w-wx-s">cdmx</span>
+        </span>
       </a>
-      <a class="wg wg-locked" id="w-money" style="--h:45" href="https://caguaserver.tail82f3c6.ts.net:8789">
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>money
+      <a class="wg wg-chip wg-locked" id="w-money" style="--h:45" href="https://caguaserver.tail82f3c6.ts.net:8789">
+        <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg></span>
+        <span class="chip-tx">
+          <span class="wg-v" id="w-money-v">&bull;&bull;&bull;&bull;</span>
+          <span class="wg-s" id="w-money-s">money · tap to unlock</span>
+        </span>
+        <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg>
+      </a>
+      <a class="wg wg-wide wg-locked" id="w-market" style="--h:95" href="http://caguaserver.tail82f3c6.ts.net:3010">
+        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-chart" xlink:href="#i-chart"/></svg>mercado · mis posiciones
           <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg></span>
-        <span class="wg-v"><span id="w-money-v">&bull;&bull;&bull;&bull;</span></span>
-        <span class="wg-s" id="w-money-s">tap to unlock</span>
+        <span class="mkt" id="w-market-list"></span>
+        <span class="wg-s" id="w-market-s">tap to unlock</span>
       </a>
-      <a class="wg wg-locked" id="w-portfolio" style="--h:95" href="http://caguaserver.tail82f3c6.ts.net:3010">
-        <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-chart" xlink:href="#i-chart"/></svg>portfolio
-          <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg></span>
-        <span class="wg-v"><span id="w-portfolio-v">&bull;&bull;&bull;&bull;</span></span>
-        <span class="wg-t wg-picks" id="w-portfolio-t"></span>
-        <span class="wg-s" id="w-portfolio-s">tap to unlock</span>
-      </a>
-      <a class="wg" id="w-fx" style="--h:170" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
+      <a class="wg wg-strip" id="w-fx" style="--h:170" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
         <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>peso</span>
-        <span class="wg-v"><span id="w-fx-v">—</span><span class="wg-unit">mxn / usd</span></span>
-        <span class="wg-t wg-picks" id="w-fx-t"></span>
-        <span class="wg-s" id="w-fx-s">&nbsp;</span>
+        <span class="fx-rates" id="w-fx-t"></span>
       </a>
-      <a class="wg" id="w-next-1" style="--h:265" href="/board" hidden>
+      <a class="wg wg-strip" id="w-next-1" style="--h:265" href="/board" hidden>
         <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>next</span>
-        <span class="wg-t" id="w-next-1-v">—</span>
-        <span class="wg-s" id="w-next-1-s">&nbsp;</span>
+        <span class="strip-tx" id="w-next-1-v">—</span>
+        <span class="strip-sub" id="w-next-1-s"></span>
       </a>
       <div class="wg wg-wide" id="w-news" style="--h:220" hidden>
         <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-bolt" xlink:href="#i-bolt"/></svg>titulares</span>
@@ -193,6 +200,6 @@
     <button type="submit" class="pin-go" id="pin-go">unlock</button>
   </form>
 
-  <script src="/static/store.js?v=6" defer></script>
+  <script src="/static/store.js?v=7" defer></script>
 </body>
 </html>

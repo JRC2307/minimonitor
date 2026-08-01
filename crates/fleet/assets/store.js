@@ -103,15 +103,58 @@
         var totals = (s.receivables && s.receivables.totals) || {};
         Object.keys(totals).forEach(function (k) { rTotal += totals[k]; });
         document.getElementById('w-money-s').textContent =
-          rc ? rc + ' receivable · ' + fmtMoney(rTotal) : 'this month · 0 receivable';
+          rc ? rc + ' receivable · ' + fmtMoney(rTotal) : 'net este mes · 0 receivable';
         moneyCard.classList.remove('wg-locked');
       });
   }
 
-  // portfolio widget — picks in order of holdings (same PIN gate as money)
+  // mercado widget — the portfolio's tickers, live day change + trading state.
+  // Holdings (which tickers, how much) come from the PIN-gated proxy; quotes
+  // (public market data) from /api/quotes (Yahoo, 5-min server cache).
   function fmtK(usd) {
     return usd >= 1000 ? '$' + (usd / 1000).toFixed(1) + 'k' : '$' + Math.round(usd);
   }
+  var pfPositions = null;   // sorted by value desc, quotable only
+  var pfTotal = 0;
+  var pfQuotes = {};        // yahoo symbol -> quote
+  var quoteTimer = null;
+
+  function yahooSym(t) {
+    if (!t || t === 'USDT') return null;
+    if (t === 'BTC' || t === 'ETH' || t === 'SOL') return t + '-USD';
+    return t;
+  }
+
+  function renderMarket() {
+    if (!pfPositions) return;
+    var anyOpen = false;
+    var rows = pfPositions.map(function (p) {
+      var q = pfQuotes[p._sym];
+      var chg = q && q.changePct != null ? q.changePct : null;
+      var open = !!(q && q.trading);
+      if (open && !(q && q.crypto)) anyOpen = true;
+      return '<span class="mkt-row">' +
+        '<span class="mkt-dot' + (open ? ' on' : '') + '"></span>' +
+        '<b class="mkt-tkr">' + esc(p.ticker) + '</b>' +
+        '<span class="mkt-hold">' + esc(fmtK(p.value || 0)) + '</span>' +
+        '<span class="mkt-price">' + (q ? esc(q.price >= 100 ? q.price.toFixed(0) : q.price.toFixed(2)) : '—') + '</span>' +
+        '<span class="mkt-chg' + (chg == null ? '' : chg >= 0 ? ' up' : ' dn') + '">' +
+        (chg == null ? '' : (chg >= 0 ? '+' : '−') + Math.abs(chg).toFixed(2) + '%') + '</span></span>';
+    });
+    document.getElementById('w-market-list').innerHTML = rows.join('');
+    document.getElementById('w-market-s').textContent =
+      fmtK(pfTotal) + ' total · bolsa ' + (anyOpen ? 'abierta' : 'cerrada') + ' · cripto 24/7';
+  }
+
+  function loadQuotes() {
+    if (!pfPositions || !pfPositions.length) return;
+    var syms = pfPositions.map(function (p) { return p._sym; }).join(',');
+    getJSON('/api/quotes?symbols=' + encodeURIComponent(syms)).then(function (d) {
+      (d.quotes || []).forEach(function (q) { pfQuotes[q.symbol] = q; });
+      renderMarket();
+    }).catch(function () {});
+  }
+
   function loadPortfolio(pin) {
     return fetch('/hub/portfolio/data', { headers: { 'X-Money-Pin': pin } })
       .then(function (r) {
@@ -122,17 +165,17 @@
         var pos = (d.positions || []).slice().sort(function (a, b) {
           return (b.value || 0) - (a.value || 0);
         });
-        var total = 0;
-        pos.forEach(function (p) { total += p.value || 0; });
-        document.getElementById('w-portfolio-v').textContent = fmtK(total);
-        document.getElementById('w-portfolio-t').innerHTML = pos.slice(0, 4)
-          .map(function (p) {
-            return '<span class="pick"><b>' + esc(p.ticker || p.name) + '</b> ' +
-              esc(fmtK(p.value || 0)) + '</span>';
-          }).join('');
-        document.getElementById('w-portfolio-s').textContent =
-          pos.length + ' posiciones · ' + (d.lastUpdated || '');
-        document.getElementById('w-portfolio').classList.remove('wg-locked');
+        pfTotal = 0;
+        pos.forEach(function (p) { pfTotal += p.value || 0; });
+        pfPositions = pos.filter(function (p) {
+          p._sym = yahooSym(p.ticker);
+          return !!p._sym;
+        }).slice(0, 8);
+        renderMarket();
+        document.getElementById('w-market').classList.remove('wg-locked');
+        loadQuotes();
+        clearInterval(quoteTimer);
+        quoteTimer = setInterval(loadQuotes, 300000);
       });
   }
 
@@ -165,11 +208,14 @@
     });
   });
 
-  moneyCard.addEventListener('click', function (e) {
-    if (unlocked()) return; // navigate to cuentas normally
-    e.preventDefault();
-    openPin();
-  });
+  // any locked widget: deliberate unlock step before navigation
+  document.addEventListener('click', function (e) {
+    var wg = e.target.closest ? e.target.closest('.wg-locked') : null;
+    if (wg && !unlocked()) {
+      e.preventDefault();
+      openPin();
+    }
+  }, true);
 
   // Private tiles never navigate while locked — deliberate unlock step first.
   document.addEventListener('click', function (e) {
@@ -185,11 +231,6 @@
     loadMoney(sessionStorage.getItem(PIN_KEY)).catch(function () {});
     loadPortfolio(sessionStorage.getItem(PIN_KEY)).catch(function () {});
   }
-  document.getElementById('w-portfolio').addEventListener('click', function (e) {
-    if (unlocked()) return;
-    e.preventDefault();
-    openPin();
-  });
 
   // ── toast ──────────────────────────────────────────────────────────────────
   var toastTimer = null;
@@ -321,7 +362,7 @@
         var n = reds || (nuevo ? parseInt(nuevo[1], 10) : 0);
         document.getElementById('w-correo-v').textContent = String(n);
         document.getElementById('w-correo-s').textContent =
-          (reds ? 'por responder' : 'nuevos') + ' · ' + relTime(c.last_ts);
+          'correo ' + (reds ? 'por responder' : 'nuevos') + ' · ' + relTime(c.last_ts);
         var wc = document.getElementById('w-correo');
         wc.classList.toggle('wg-zero', !n);
         show(wc);
@@ -332,7 +373,7 @@
         var wn = parseInt(m[1], 10);
         document.getElementById('w-whats-v').textContent = String(wn);
         document.getElementById('w-whats-s').textContent =
-          'chats esperan · ' + relTime(c.last_ts);
+          'whatsapp esperan · ' + relTime(c.last_ts);
         var ww = document.getElementById('w-whats');
         ww.classList.toggle('wg-zero', !wn);
         show(ww);
@@ -393,14 +434,12 @@
       function per(code) { return r[code] ? 1 / r[code] : null; }
       var usd = per('USD');
       if (!usd) return;
-      document.getElementById('w-fx-v').textContent = usd.toFixed(2);
       document.getElementById('w-fx-t').innerHTML =
-        [['EUR', per('EUR')], ['GBP', per('GBP')], ['BRL', per('BRL')]]
+        [['USD', usd], ['EUR', per('EUR')], ['GBP', per('GBP')], ['BRL', per('BRL')]]
           .filter(function (x) { return x[1]; })
           .map(function (x) {
-            return '<span class="pick"><b>' + x[0] + '</b> ' + x[1].toFixed(2) + '</span>';
+            return '<span class="fx-r"><b>' + x[0] + '</b>' + x[1].toFixed(2) + '</span>';
           }).join('');
-      document.getElementById('w-fx-s').textContent = 'ecb · ' + (d.date || '');
       show(document.getElementById('w-fx'));
     }).catch(function () {});
 
@@ -440,12 +479,12 @@
       icon.setAttribute('href', '#i-' + kind[1]);
       icon.setAttribute('xlink:href', '#i-' + kind[1]);
       document.getElementById('w-wx-v').textContent =
-        Math.round(cur.temperature_2m) + '° ' + kind[2];
+        Math.round(cur.temperature_2m) + '°';
       var lo = Math.round((day.temperature_2m_min || [0])[0]);
       var hi = Math.round((day.temperature_2m_max || [0])[0]);
       var rain = (day.precipitation_probability_max || [0])[0];
       document.getElementById('w-wx-s').textContent =
-        lo + '–' + hi + '° · lluvia ' + rain + '%';
+        kind[2] + ' · ' + lo + '–' + hi + '° · lluvia ' + rain + '%';
       show(document.getElementById('w-wx'));
     }).catch(function () {});
 

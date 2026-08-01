@@ -73,57 +73,64 @@ body.store {
 /* small screens: drop the atmosphere layer entirely — the phone stays cool */
 @media (max-width: 700px) { .aurora { display: none; } }
 
-/* ── header: wordmark + serif clock, a lock-screen line with manners ──────── */
+/* ── header: one seamless line — dot, serif clock, date, status ──────────── */
 
-.os-head { text-align: center; margin-bottom: 1.5rem; position: relative; z-index: 1; }
-
-.wordmark {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  font-size: 0.72rem;
-  letter-spacing: 0.34em;
-  text-transform: uppercase;
-  color: var(--muted);
+.os-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7em;
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto 1.1rem;
+  position: relative;
+  z-index: 1;
 }
-.wordmark .dot {
-  width: 0.5em;
-  height: 0.5em;
+@media (min-width: 900px) { .os-head { max-width: 860px; } }
+
+.os-head .dot {
+  align-self: center;
+  width: 0.45em;
+  height: 0.45em;
+  flex: none;
   border-radius: 50%;
   background: linear-gradient(140deg, #6fa5d8, #57b981);
 }
 
 .clock {
   font-family: var(--serif);
-  font-size: clamp(3rem, 15vw, 4.4rem);
+  font-size: 2.1rem;
   font-weight: 300;
-  letter-spacing: 0.03em;
-  line-height: 1.05;
-  margin-top: 0.4rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .date {
+  flex: 1;
+  min-width: 0;
   font-family: var(--serif);
   font-style: italic;
   color: var(--muted);
-  font-size: 1rem;
-  margin-top: 0.15rem;
-  letter-spacing: 0.06em;
+  font-size: 0.92rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sys {
-  display: inline-block;
+  flex: none;
+  align-self: center;
   text-decoration: none;
-  margin-top: 0.8rem;
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
   color: var(--muted);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 0.3em 0.95em;
+  padding: 0.3em 0.8em;
   background: #ffffff06;
 }
+.sys:hover { color: var(--fg); }
 
 /* ── shared shell width ───────────────────────────────────────────────────── */
 
@@ -388,36 +395,39 @@ body.store {
 }
 .pulse-warn .pulse-n { background: var(--amber); }
 
-/* ── widget board — the key surface: live data in squares ─────────────────── */
+/* ── widget board — adaptive bento: sizes follow the data ─────────────────── */
 
 .wgrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.7rem;
-  margin-bottom: 1.8rem;
+  gap: 0.55rem;
+  margin-bottom: 1.7rem;
 }
-@media (min-width: 700px) { .wgrid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 700px) {
+  .wgrid { grid-template-columns: repeat(4, 1fr); grid-auto-flow: dense; }
+  .wg-heart { grid-column: span 2; }
+  .wg-strip { grid-column: span 2; }
+  .wg-wide  { grid-column: span 2; }
+}
 
 .wg {
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 0.3rem;
-  aspect-ratio: 1.28;
+  gap: 0.28rem;
   border: 1px solid var(--line);
-  border-radius: 1.05rem;
-  padding: 0.75rem 0.85rem 0.7rem;
+  border-radius: 0.95rem;
+  padding: 0.65rem 0.8rem;
   text-decoration: none;
   color: var(--fg);
   overflow: hidden;
   background:
-    radial-gradient(130% 95% at 88% -12%, hsl(var(--h) 42% 24% / 0.26), transparent 58%),
-    linear-gradient(180deg, #ffffff06, #ffffff02);
+    radial-gradient(130% 110% at 88% -15%, hsl(var(--h) 42% 24% / 0.22), transparent 58%),
+    linear-gradient(180deg, #ffffff05, #ffffff02);
   transition: border-color 0.12s ease, transform 0.12s ease;
 }
 .wg:hover { border-color: hsl(var(--h) 30% 34%); }
-.wg:active { transform: scale(0.97); }
+.wg:active { transform: scale(0.98); }
 .wg.wg-zero { opacity: 0.55; }
 
 .wg-k {
@@ -425,7 +435,7 @@ body.store {
   align-items: center;
   gap: 0.45em;
   font-size: 0.58rem;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   color: hsl(var(--h) 42% 62%);
   white-space: nowrap;
@@ -441,9 +451,9 @@ body.store {
   align-items: baseline;
   gap: 0.3em;
   font-family: var(--serif);
-  font-size: 2.1rem;
+  font-size: 1.5rem;
   font-weight: 300;
-  line-height: 1;
+  line-height: 1.05;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -451,32 +461,9 @@ body.store {
 }
 .wg-unit {
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   letter-spacing: 0.14em;
   color: var(--muted);
-}
-#w-wx .wg-v, #w-money .wg-v { font-size: 1.45rem; }
-
-.wg-t {
-  font-size: 0.76rem;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.wg-spark {
-  width: 100%;
-  height: 1.35rem;
-  flex: none;
-}
-.wg-spark polyline {
-  fill: none;
-  stroke: hsl(var(--h) 55% 58%);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .wg-s {
@@ -488,39 +475,145 @@ body.store {
   text-overflow: ellipsis;
 }
 
-/* picks — small ranked rows inside a square (portfolio holdings, fx rates) */
-.wg-picks {
+/* heart — wide card: numbers left, live sparkline filling the right */
+.wg-heart {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.9rem;
+}
+.heart-left {
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
-  font-size: 0.68rem;
-  line-height: 1.5;
-  color: var(--muted);
+  gap: 0.28rem;
+  min-width: 0;
+  max-width: 60%;
+}
+.wg-heart .wg-v { font-size: 1.9rem; }
+.wg-spark { flex: 1; min-width: 0; height: 2.2rem; align-self: center; }
+.wg-spark polyline {
+  fill: none;
+  stroke: hsl(var(--h) 55% 58%);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* chips — small horizontal facts */
+.wg-chip {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+}
+.chip-ico {
+  flex: none;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.7rem;
+  display: grid;
+  place-items: center;
+  background: hsl(var(--h) 40% 22% / 0.35);
+  color: hsl(var(--h) 55% 68%);
+}
+.chip-ico svg {
+  width: 1.05rem; height: 1.05rem;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.chip-tx {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.06rem;
+}
+.wg-chip .wg-v { font-size: 1.3rem; }
+.wg-chip .wg-lock { align-self: center; }
+
+/* strips — one-line full-width facts */
+.wg-strip {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.55rem 0.85rem;
+}
+.strip-tx {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.wg-picks .pick {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.6em;
+.strip-sub {
+  flex: none;
+  font-size: 0.6rem;
+  color: var(--muted);
   white-space: nowrap;
 }
-.wg-picks .pick b {
-  font-weight: 500;
-  color: var(--fg);
-  letter-spacing: 0.04em;
-}
-body:not(.unlocked) .wg-locked .wg-picks { display: none; }
-
-/* wide card — spans the board (titulares) */
-.wg-wide {
-  grid-column: 1 / -1;
-  aspect-ratio: auto;
-  justify-content: flex-start;
-}
-.wg-news {
+.fx-rates {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
+  gap: 1.1em;
+  overflow-x: auto;
+  scrollbar-width: none;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
 }
+.fx-rates::-webkit-scrollbar { display: none; }
+.fx-r { display: inline-flex; align-items: baseline; gap: 0.45em; white-space: nowrap; }
+.fx-r b {
+  font-weight: 500;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+/* wide cards */
+.wg-wide { grid-column: 1 / -1; }
+
+/* mercado — ticker rows: dot · ticker · holding · price · day change */
+.mkt { display: flex; flex-direction: column; }
+.mkt-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 0.34em 0;
+  border-bottom: 1px solid #ffffff08;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-row:last-child { border-bottom: 0; }
+.mkt-dot {
+  flex: none;
+  align-self: center;
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 50%;
+  background: var(--down);
+}
+.mkt-dot.on { background: var(--up); box-shadow: 0 0 5px #57b98188; }
+.mkt-tkr {
+  flex: none;
+  width: 3.4em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.mkt-hold { flex: 1; font-size: 0.62rem; color: var(--faint); }
+.mkt-price { flex: none; }
+.mkt-chg { flex: none; width: 4.6em; text-align: right; color: var(--muted); }
+.mkt-chg.up { color: var(--up); }
+.mkt-chg.dn { color: var(--red); }
+body:not(.unlocked) .wg-locked .mkt { display: none; }
+
+/* titulares — headline rows */
+.wg-news { display: flex; flex-direction: column; }
 .news-it {
   display: flex;
   align-items: baseline;

@@ -108,6 +108,34 @@
       });
   }
 
+  // portfolio widget — picks in order of holdings (same PIN gate as money)
+  function fmtK(usd) {
+    return usd >= 1000 ? '$' + (usd / 1000).toFixed(1) + 'k' : '$' + Math.round(usd);
+  }
+  function loadPortfolio(pin) {
+    return fetch('/hub/portfolio/data', { headers: { 'X-Money-Pin': pin } })
+      .then(function (r) {
+        if (!r.ok) throw new Error('' + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        var pos = (d.positions || []).slice().sort(function (a, b) {
+          return (b.value || 0) - (a.value || 0);
+        });
+        var total = 0;
+        pos.forEach(function (p) { total += p.value || 0; });
+        document.getElementById('w-portfolio-v').textContent = fmtK(total);
+        document.getElementById('w-portfolio-t').innerHTML = pos.slice(0, 4)
+          .map(function (p) {
+            return '<span class="pick"><b>' + esc(p.ticker || p.name) + '</b> ' +
+              esc(fmtK(p.value || 0)) + '</span>';
+          }).join('');
+        document.getElementById('w-portfolio-s').textContent =
+          pos.length + ' posiciones · ' + (d.lastUpdated || '');
+        document.getElementById('w-portfolio').classList.remove('wg-locked');
+      });
+  }
+
   function openPin() {
     pinVeil.hidden = false;
     pinPop.hidden = false;
@@ -127,6 +155,7 @@
       sessionStorage.setItem(PIN_KEY, pin);
       applyLockUI();
       closePin();
+      loadPortfolio(pin).catch(function () {});
     }).catch(function () {
       pinPop.classList.remove('shake');
       void pinPop.offsetWidth; // restart animation
@@ -154,7 +183,13 @@
   applyLockUI();
   if (unlocked()) {
     loadMoney(sessionStorage.getItem(PIN_KEY)).catch(function () {});
+    loadPortfolio(sessionStorage.getItem(PIN_KEY)).catch(function () {});
   }
+  document.getElementById('w-portfolio').addEventListener('click', function (e) {
+    if (unlocked()) return;
+    e.preventDefault();
+    openPin();
+  });
 
   // ── toast ──────────────────────────────────────────────────────────────────
   var toastTimer = null;
@@ -350,6 +385,36 @@
   }
   loadHeart();
   setInterval(loadHeart, 60000);
+
+  // ── peso widget — MXN vs world currencies (frankfurter/ECB, no key) ────────
+  getJSON('https://api.frankfurter.dev/v1/latest?base=MXN&symbols=USD,EUR,GBP,JPY,BRL')
+    .then(function (d) {
+      var r = d.rates || {};
+      function per(code) { return r[code] ? 1 / r[code] : null; }
+      var usd = per('USD');
+      if (!usd) return;
+      document.getElementById('w-fx-v').textContent = usd.toFixed(2);
+      document.getElementById('w-fx-t').innerHTML =
+        [['EUR', per('EUR')], ['GBP', per('GBP')], ['BRL', per('BRL')]]
+          .filter(function (x) { return x[1]; })
+          .map(function (x) {
+            return '<span class="pick"><b>' + x[0] + '</b> ' + x[1].toFixed(2) + '</span>';
+          }).join('');
+      document.getElementById('w-fx-s').textContent = 'ecb · ' + (d.date || '');
+      show(document.getElementById('w-fx'));
+    }).catch(function () {});
+
+  // ── titulares — breaking news (server-side RSS proxy, 10 min cache) ────────
+  getJSON('/api/news').then(function (d) {
+    var items = (d.items || []).slice(0, 5);
+    if (!items.length) return;
+    document.getElementById('w-news-list').innerHTML = items.map(function (n) {
+      return '<a class="news-it" href="' + esc(n.link || '#') + '" target="_blank" rel="noopener">' +
+        '<span class="news-t">' + esc(n.title) + '</span>' +
+        (n.source ? '<span class="news-src">' + esc(n.source) + '</span>' : '') + '</a>';
+    }).join('');
+    show(document.getElementById('w-news'));
+  }).catch(function () {});
 
   // ── weather — CDMX snapshot (open-meteo, no key) ───────────────────────────
   var WMO = [

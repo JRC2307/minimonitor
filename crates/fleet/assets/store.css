@@ -488,6 +488,65 @@ body.store {
   text-overflow: ellipsis;
 }
 
+/* picks — small ranked rows inside a square (portfolio holdings, fx rates) */
+.wg-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow: hidden;
+}
+.wg-picks .pick {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6em;
+  white-space: nowrap;
+}
+.wg-picks .pick b {
+  font-weight: 500;
+  color: var(--fg);
+  letter-spacing: 0.04em;
+}
+body:not(.unlocked) .wg-locked .wg-picks { display: none; }
+
+/* wide card — spans the board (titulares) */
+.wg-wide {
+  grid-column: 1 / -1;
+  aspect-ratio: auto;
+  justify-content: flex-start;
+}
+.wg-news {
+  display: flex;
+  flex-direction: column;
+}
+.news-it {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7em;
+  padding: 0.42em 0;
+  text-decoration: none;
+  border-bottom: 1px solid #ffffff08;
+}
+.news-it:last-child { border-bottom: 0; }
+.news-t {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--fg);
+}
+.news-it:hover .news-t { color: #fff; }
+.news-src {
+  flex: none;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 /* ── categorized app grid ─────────────────────────────────────────────────── */
 
 .cats {

@@ -53,6 +53,10 @@ pub struct AppState {
     pub hermeshub_url: String,
     /// vitals base URL (`/hub/vitals/*` upstream).
     pub vitals_url: String,
+    /// portfolio base URL (`/hub/portfolio/*` upstream, money-PIN-gated).
+    pub portfolio_url: String,
+    /// Bearer token for the portfolio upstream.
+    pub portfolio_token: Option<String>,
     /// PIN for the money proxy (`X-Money-Pin` header). None → proxy disabled.
     pub money_pin: Option<String>,
 }
@@ -329,6 +333,85 @@ pub async fn get_store(State(state): State<AppState>) -> Response {
         up_count,
         led_count,
     })
+}
+
+// ── GET /api/news (breaking headlines for the launcher's news widget) ────────
+
+/// Minimal XML entity unescape for RSS titles.
+fn xml_unescape(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+}
+
+/// Pull `<tag>…</tag>` out of an XML fragment (no attribute handling — Google
+/// News RSS item titles/dates are plain elements).
+fn xml_tag<'a>(frag: &'a str, tag: &str) -> Option<&'a str> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = frag.find(&open)? + open.len();
+    let end = frag[start..].find(&close)? + start;
+    Some(&frag[start..end])
+}
+
+/// Headlines, cached ~10 min so a fleet of phone opens doesn't hammer the feed.
+static NEWS_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<(std::time::Instant, String)>>> =
+    std::sync::OnceLock::new();
+
+/// `GET /api/news` — top headlines (Google News RSS es-MX), parsed server-side
+/// because the feed has no CORS. `[{title, source, ts}]`, newest first.
+pub async fn get_news(State(state): State<AppState>) -> Response {
+    let cache = NEWS_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    if let Some((at, body)) = cache.lock().unwrap().clone()
+        && at.elapsed() < Duration::from_secs(600)
+    {
+        return ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response();
+    }
+
+    let feed = "https://news.google.com/rss?hl=es-419&gl=MX&ceid=MX:es-419";
+    let xml = match state
+        .http
+        .get(feed)
+        .timeout(Duration::from_secs(6))
+        .send()
+        .await
+    {
+        Ok(r) => r.text().await.unwrap_or_default(),
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                format!("{{\"error\":\"news feed unreachable: {e}\"}}"),
+            )
+                .into_response();
+        }
+    };
+
+    let mut items: Vec<serde_json::Value> = Vec::new();
+    for frag in xml.split("<item>").skip(1).take(8) {
+        let Some(raw_title) = xml_tag(frag, "title") else { continue };
+        let title = xml_unescape(raw_title.trim());
+        // Google News appends " - Source" to every headline.
+        let (headline, source) = match title.rsplit_once(" - ") {
+            Some((h, s)) => (h.to_owned(), s.to_owned()),
+            None => (title, String::new()),
+        };
+        let ts = xml_tag(frag, "pubDate").map(str::trim).unwrap_or("");
+        let link = xml_tag(frag, "link").map(str::trim).unwrap_or("");
+        items.push(serde_json::json!({
+            "title": headline,
+            "source": source,
+            "ts": ts,
+            "link": link,
+        }));
+    }
+
+    let body = serde_json::json!({ "items": items }).to_string();
+    *cache.lock().unwrap() = Some((std::time::Instant::now(), body.clone()));
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response()
 }
 
 // ── GET /board (kanban over the Command Center) ──────────────────────────────

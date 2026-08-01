@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>caguastore</title>
-  <meta name="theme-color" content="#0b0d12">
+  <meta name="theme-color" content="#0a0c11">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="stylesheet" href="/static/store.css?v=3">
+  <link rel="stylesheet" href="/static/store.css?v=4">
 </head>
 <body class="store">
   <div class="grain" aria-hidden="true"></div>
@@ -18,21 +18,39 @@
     <div class="wordmark"><span class="dot"></span>caguastore</div>
     <div class="clock" id="clock">--:--</div>
     <div class="date" id="date">&nbsp;</div>
-    <div class="sys">{{ up_count }}/{{ led_count }} apps up · caguaserver</div>
+    <div class="sys">{{ up_count }}/{{ led_count }} up · caguaserver</div>
   </header>
 
   <div class="shell">
-    <!-- command-line search -->
+    <!-- command bar: search apps & tasks, or `>` to ask hermes -->
     <div class="cmd" id="cmd">
-      <svg class="cmd-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-term" xlink:href="#i-term"/></svg>
       <span class="cmd-prompt" aria-hidden="true">&#10095;</span>
-      <input id="q" type="text" placeholder="search apps &amp; tasks" autocomplete="off"
-             autocapitalize="off" spellcheck="false" aria-label="search apps and tasks">
-      <button class="cmd-clear" id="q-clear" aria-label="clear search" hidden>&times;</button>
+      <input id="q" type="text" placeholder="search · &gt; ask" autocomplete="off"
+             autocapitalize="off" spellcheck="false" aria-label="search apps and tasks, or ask hermes">
+      <button class="cmd-clear" id="q-clear" aria-label="clear" hidden>&times;</button>
       <kbd class="cmd-kbd" aria-hidden="true">/</kbd>
     </div>
 
-    <!-- live "now" strip: filled by store.js; each card degrades to hidden -->
+    <!-- ask mode: model picker (chips) -->
+    <div class="models" id="models" hidden></div>
+
+    <!-- ask mode: conversation panel -->
+    <section class="ask" id="ask" hidden aria-label="quick prompt">
+      <div class="ask-q"><span class="ask-model" id="ask-model"></span><span id="ask-q-text"></span></div>
+      <div class="ask-a" id="ask-a"></div>
+      <div class="ask-foot">
+        <button type="button" class="ask-btn" id="ask-close">close</button>
+        <a class="ask-link" href="https://caguaserver.tail82f3c6.ts.net:8796" id="ask-open">open in hermes &#8594;</a>
+      </div>
+    </section>
+
+    <!-- pulse: consolidated notifications (hermes unread + apps down) -->
+    <section class="pulse" id="pulse" hidden aria-label="notifications">
+      <h2 class="sec-head"><span>pulse</span></h2>
+      <div class="pulse-list" id="pulse-list"></div>
+    </section>
+
+    <!-- live cards: money (PIN), next actions from the board -->
     <section class="now" id="now-strip" aria-label="now">
       <a class="now-card now-locked" id="now-money" style="--h:145" href="https://caguaserver.tail82f3c6.ts.net:8789">
         <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>money
@@ -40,17 +58,12 @@
         <span class="now-v" id="now-money-v">&bull;&bull;&bull;&bull;</span>
         <span class="now-s" id="now-money-s">tap to unlock</span>
       </a>
-      <a class="now-card" id="now-hermes" style="--h:265" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
-        <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-speech" xlink:href="#i-speech"/></svg>hermes</span>
-        <span class="now-v" id="now-hermes-v">—</span>
-        <span class="now-s" id="now-hermes-s">&nbsp;</span>
-      </a>
-      <a class="now-card now-next" id="now-next-1" style="--h:210" href="/board" hidden>
+      <a class="now-card now-next" id="now-next-1" style="--h:215" href="/board" hidden>
         <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>next</span>
         <span class="now-v now-v-sm" id="now-next-1-v">—</span>
         <span class="now-s" id="now-next-1-s">&nbsp;</span>
       </a>
-      <a class="now-card now-next" id="now-next-2" style="--h:210" href="/board" hidden>
+      <a class="now-card now-next" id="now-next-2" style="--h:215" href="/board" hidden>
         <span class="now-k"><svg viewBox="0 0 24 24"><use href="#i-kanban" xlink:href="#i-kanban"/></svg>next</span>
         <span class="now-v now-v-sm" id="now-next-2-v">—</span>
         <span class="now-s" id="now-next-2-s">&nbsp;</span>
@@ -60,7 +73,7 @@
     <main class="cats" id="cats">
       {% for g in groups %}
       <section class="cat">
-        <h2 class="cat-head"><span>{{ g.title }}</span></h2>
+        <h2 class="sec-head"><span>{{ g.title }}</span></h2>
         <div class="grid">
           {% for t in g.tiles %}
           <a class="tile{% if t.has_led %}{% if t.up %} up{% else %} down{% endif %}{% endif %}{% if t.private %} priv{% endif %}"
@@ -81,11 +94,11 @@
 
       <!-- task search results (Command Center, via /hub/cc) -->
       <section class="cat task-hits" id="task-hits" hidden>
-        <h2 class="cat-head"><span>tasks</span></h2>
+        <h2 class="sec-head"><span>tasks</span></h2>
         <div class="hit-list" id="hit-list"></div>
       </section>
 
-      <p class="no-hits" id="no-hits" hidden>no matches</p>
+      <p class="no-hits" id="no-hits" hidden>no matches — <kbd>&#9166;</kbd> asks hermes</p>
     </main>
   </div>
 
@@ -143,6 +156,6 @@
     <button type="submit" class="pin-go" id="pin-go">unlock</button>
   </form>
 
-  <script src="/static/store.js?v=3" defer></script>
+  <script src="/static/store.js?v=4" defer></script>
 </body>
 </html>

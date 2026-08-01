@@ -1,7 +1,9 @@
-/* caguastore home — clock, SW, instant search (apps + CC tasks), now-strip.
-   Dependency-free by design (repo rule: no npm, no CDN). */
+/* caguastore home — clock, SW, instant search (apps + CC tasks), pulse feed,
+   quick prompt to hermes (`>` mode). Dependency-free (repo rule: no npm/CDN). */
 (function () {
   'use strict';
+
+  var HERMES_URL = 'https://caguaserver.tail82f3c6.ts.net:8796';
 
   // ── clock ──────────────────────────────────────────────────────────────────
   var clock = document.getElementById('clock');
@@ -27,17 +29,38 @@
       return r.json();
     });
   }
+  function postJSON(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        return { ok: r.ok, status: r.status, body: j };
+      });
+    });
+  }
   function esc(s) {
     return String(s).replace(/[&<>"]/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
   function show(el) { el.hidden = false; }
-
-  // ── now strip ──────────────────────────────────────────────────────────────
-  function fmtMoney(cents) {
-    var n = Math.round(cents / 100);
-    return '$' + n.toLocaleString('en-US');
+  function relTime(iso) {
+    if (!iso) return '';
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return '';
+    var m = Math.round((Date.now() - t) / 60000);
+    if (m < 1) return 'now';
+    if (m < 60) return m + 'm';
+    var h = Math.round(m / 60);
+    if (h < 24) return h + 'h';
+    return Math.round(h / 24) + 'd';
+  }
+  // one plain-text line out of a hub message (strip markdown noise)
+  function preview(s) {
+    return String(s || '').split('\n')[0]
+      .replace(/\*\*|__|~~|`/g, '').trim().slice(0, 90);
   }
 
   // ── money lock: server-gated proxy + session PIN ───────────────────────────
@@ -51,6 +74,11 @@
 
   function unlocked() { return !!sessionStorage.getItem(PIN_KEY); }
   function applyLockUI() { document.body.classList.toggle('unlocked', unlocked()); }
+
+  function fmtMoney(cents) {
+    var n = Math.round(cents / 100);
+    return '$' + n.toLocaleString('en-US');
+  }
 
   function loadMoney(pin) {
     return fetch('/hub/cuentas/summary', { headers: { 'X-Money-Pin': pin } })
@@ -121,14 +149,42 @@
     loadMoney(sessionStorage.getItem(PIN_KEY)).catch(function () {});
   }
 
-  getJSON('/hub/hermes/channels').then(function (chs) {
-    if (!Array.isArray(chs)) return;
-    var unread = chs.reduce(function (a, c) { return a + (c.unread || 0); }, 0);
-    document.getElementById('now-hermes-v').textContent =
-      unread ? unread + ' unread' : 'inbox zero';
-    document.getElementById('now-hermes-s').textContent = chs.length + ' channels';
-    show(document.getElementById('now-hermes'));
-  }).catch(function () {});
+  // ── pulse — consolidated notifications ─────────────────────────────────────
+  // hermes channels with unread (skip the quick-prompt scratch channel) plus
+  // any catalog app whose LED reads down. Quiet when there is nothing.
+  var pulse = document.getElementById('pulse');
+  var pulseList = document.getElementById('pulse-list');
+
+  function pulseItem(href, hue, name, text, badge, time) {
+    return '<a class="pulse-it" style="--h:' + hue + '" href="' + esc(href) + '">' +
+      '<span class="pulse-dot"></span>' +
+      '<span class="pulse-body"><span class="pulse-name">' + esc(name) + '</span>' +
+      '<span class="pulse-text">' + esc(text) + '</span></span>' +
+      (time ? '<span class="pulse-time">' + esc(time) + '</span>' : '') +
+      (badge ? '<span class="pulse-n">' + esc(badge) + '</span>' : '') +
+      '</a>';
+  }
+
+  function renderPulse(channels) {
+    var items = [];
+    (channels || []).forEach(function (c) {
+      if (!c.unread || c.name === 'quick') return;
+      items.push(pulseItem(HERMES_URL, 275, c.name,
+        preview(c.last_text), String(c.unread), relTime(c.last_ts)));
+    });
+    // apps down — read off the server-rendered tiles
+    Array.prototype.forEach.call(document.querySelectorAll('.tile.down'), function (t) {
+      items.push('<a class="pulse-it pulse-warn" href="' + esc(t.href) + '">' +
+        '<span class="pulse-dot"></span>' +
+        '<span class="pulse-body"><span class="pulse-name">' +
+        esc(t.querySelector('.label').textContent) + '</span>' +
+        '<span class="pulse-text">app is down</span></span></a>');
+    });
+    pulseList.innerHTML = items.slice(0, 6).join('');
+    pulse.hidden = !items.length;
+  }
+
+  getJSON('/hub/hermes/channels').then(renderPulse).catch(function () { renderPulse([]); });
 
   getJSON('/hub/cc/next').then(function (projects) {
     if (!Array.isArray(projects)) return;
@@ -144,9 +200,117 @@
     });
   }).catch(function () {});
 
-  // ── search ─────────────────────────────────────────────────────────────────
+  // ── quick prompt (`>` mode) — any model, through hermes ────────────────────
+  var MODEL_KEY = 'caguastore.model';
+  var modelsRow = document.getElementById('models');
+  var askPanel = document.getElementById('ask');
+  var askQText = document.getElementById('ask-q-text');
+  var askModel = document.getElementById('ask-model');
+  var askA = document.getElementById('ask-a');
+  var models = [];          // [{id,label,default}]
+  var modelsLoaded = false;
+  var askPollTimer = null;
+
+  function pickedModel() {
+    var saved = localStorage.getItem(MODEL_KEY);
+    var hit = models.filter(function (m) { return m.id === saved; })[0];
+    if (hit) return hit;
+    return models.filter(function (m) { return m.default; })[0] || models[0] || null;
+  }
+
+  function renderModels() {
+    var cur = pickedModel();
+    modelsRow.innerHTML = models.map(function (m) {
+      return '<button type="button" class="chip' +
+        (cur && m.id === cur.id ? ' on' : '') + '" data-model="' + esc(m.id) + '">' +
+        esc(m.label) + '</button>';
+    }).join('');
+  }
+  modelsRow.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-model]') : null;
+    if (!b) return;
+    localStorage.setItem(MODEL_KEY, b.dataset.model);
+    renderModels();
+    q.focus();
+  });
+
+  function loadModels() {
+    if (modelsLoaded) return Promise.resolve();
+    return getJSON('/hub/hermes/models').then(function (d) {
+      models = (d && d.models) || [];
+      modelsLoaded = true;
+      renderModels();
+    }).catch(function () { renderModels(); });
+  }
+
+  function stopAskPoll() {
+    if (askPollTimer) { clearTimeout(askPollTimer); askPollTimer = null; }
+  }
+
+  function closeAsk() {
+    stopAskPoll();
+    askPanel.hidden = true;
+  }
+  document.getElementById('ask-close').addEventListener('click', function () {
+    closeAsk();
+    q.focus();
+  });
+
+  function pollReply(afterId, deadline) {
+    askPollTimer = setTimeout(function () {
+      getJSON('/hub/hermes/messages?channel=quick&after_id=' + afterId).then(function (msgs) {
+        var reply = (msgs || []).filter(function (m) { return m.sender !== 'user'; })[0];
+        if (reply) {
+          askA.textContent = reply.text || '(empty reply)';
+          askA.classList.remove('thinking');
+          // keep quick chatter out of the pulse feed
+          postJSON('/hub/hermes/channels/quick/read', { last_id: reply.id }).catch(function () {});
+          return;
+        }
+        if (Date.now() > deadline) {
+          askA.textContent = 'no reply yet — it will land in hermes.';
+          askA.classList.remove('thinking');
+          return;
+        }
+        pollReply(afterId, deadline);
+      }).catch(function () {
+        if (Date.now() > deadline) {
+          askA.textContent = 'lost the connection — check hermes.';
+          askA.classList.remove('thinking');
+        } else {
+          pollReply(afterId, deadline);
+        }
+      });
+    }, 1500);
+  }
+
+  function sendAsk(text) {
+    var m = pickedModel();
+    stopAskPoll();
+    askPanel.hidden = false;
+    askQText.textContent = text;
+    askModel.textContent = m ? m.label : 'hermes';
+    askA.textContent = 'thinking';
+    askA.classList.add('thinking');
+    // ensure the scratch channel exists (409 = already there), pin the model,
+    // then send. Failures surface in the panel instead of dying silently.
+    postJSON('/hub/hermes/channels', { name: 'quick' }).then(function () {
+      return m ? postJSON('/hub/hermes/channels/quick/model', { model: m.id }) : null;
+    }).then(function () {
+      return postJSON('/hub/hermes/send', { channel: 'quick', text: text });
+    }).then(function (r) {
+      if (!r || !r.ok || !r.body || !r.body.id) throw new Error('send failed');
+      pollReply(r.body.id, Date.now() + 120000);
+    }).catch(function () {
+      askA.textContent = 'could not reach hermes.';
+      askA.classList.remove('thinking');
+    });
+  }
+
+  // ── search / command bar ───────────────────────────────────────────────────
   var q = document.getElementById('q');
   var qClear = document.getElementById('q-clear');
+  var cmd = document.getElementById('cmd');
   var nowStrip = document.getElementById('now-strip');
   var taskHits = document.getElementById('task-hits');
   var hitList = document.getElementById('hit-list');
@@ -154,12 +318,15 @@
   var tiles = Array.prototype.slice.call(document.querySelectorAll('.tile'));
   var cats = Array.prototype.slice.call(document.querySelectorAll('.cat:not(.task-hits)'));
   var sel = -1; // index into visible tiles
+  var anyTileHit = true;
 
   tiles.forEach(function (t) {
     t._name = t.querySelector('.label').textContent.toLowerCase();
     t._hay = (t._name + ' ' + (t.dataset.slug || '') + ' ' + (t.dataset.tag || '') + ' ' +
       (t.dataset.cat || '')).toLowerCase();
   });
+
+  function askMode() { return q.value.charAt(0) === '>'; }
 
   // subsequence match; returns match positions in `name` when they land there
   function subseq(hay, needle) {
@@ -201,24 +368,30 @@
   }
 
   function applyFilter() {
-    var needle = q.value.trim().toLowerCase();
-    qClear.hidden = !needle;
-    nowStrip.classList.toggle('q-hide', !!needle);
+    var ask = askMode();
+    cmd.classList.toggle('ask-on', ask);
+    modelsRow.hidden = !ask;
+    if (ask) loadModels();
+    var needle = ask ? '' : q.value.trim().toLowerCase();
+    qClear.hidden = !q.value;
+    nowStrip.classList.toggle('q-hide', !!q.value);
+    pulse.classList.toggle('q-hide', !!q.value);
     var any = false;
     tiles.forEach(function (t) {
       var hit = !needle || t._hay.indexOf(needle) !== -1 || subseq(t._hay, needle);
-      t.classList.toggle('q-hide', !hit);
+      t.classList.toggle('q-hide', !hit || ask);
       highlight(t, hit && needle && subseq(t._name, needle) ? needle : '');
       if (hit) any = true;
     });
+    anyTileHit = any;
     cats.forEach(function (c) {
       var alive = c.querySelector('.tile:not(.q-hide)');
       c.classList.toggle('q-hide', !alive);
     });
     setSel(needle ? 0 : -1);
     if (!needle) { tiles.forEach(function (t) { t.classList.remove('sel'); }); sel = -1; }
-    searchTasks(needle);
-    noHits.hidden = any || !needle || !taskHits.hidden;
+    searchTasks(ask ? '' : needle);
+    noHits.hidden = ask || any || !needle || !taskHits.hidden;
   }
 
   // task search — one lazy fetch of the full task list, filtered client-side
@@ -276,7 +449,7 @@
       q.focus();
       return;
     }
-    if (!typing && e.key.length === 1 && /[a-z0-9]/i.test(e.key) &&
+    if (!typing && (e.key.length === 1 && /[a-z0-9>]/i.test(e.key)) &&
         !e.metaKey && !e.ctrlKey && !e.altKey) {
       q.focus(); // plain typing focuses search; the char lands in the input
       return;
@@ -285,6 +458,7 @@
     if (e.key === 'Escape') {
       q.value = '';
       applyFilter();
+      closeAsk();
       q.blur();
     } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
       e.preventDefault();
@@ -293,13 +467,19 @@
       e.preventDefault();
       setSel(sel - 1);
     } else if (e.key === 'Enter') {
+      if (askMode()) {
+        var prompt = q.value.slice(1).trim();
+        if (prompt) sendAsk(prompt);
+        return;
+      }
       var vis = visibleTiles();
       var pick = vis[sel >= 0 ? sel : 0];
-      if (pick) window.location.href = pick.href;
-      else {
-        var hit = hitList.querySelector('.hit');
-        if (hit) window.location.href = hit.href;
-      }
+      if (pick) { window.location.href = pick.href; return; }
+      var hit = hitList.querySelector('.hit');
+      if (hit) { window.location.href = hit.href; return; }
+      // nothing matched — fall through to hermes with the raw query
+      var raw = q.value.trim();
+      if (raw.length > 1 && !anyTileHit) sendAsk(raw);
     }
   });
 })();

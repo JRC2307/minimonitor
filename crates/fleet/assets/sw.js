@@ -1,11 +1,11 @@
 /* caguastore service worker — cache the launcher shell so the home screen
    opens instantly (and offline) on the phone. Bump VERSION on asset changes. */
-var VERSION = 'caguastore-v3';
+var VERSION = 'caguastore-v4';
 var SHELL = [
   '/',
   '/board',
-  '/static/store.css?v=3',
-  '/static/store.js?v=3',
+  '/static/store.css?v=4',
+  '/static/store.js?v=4',
   '/static/board.js?v=3',
   '/static/app.css',
   '/static/htmx.min.js',

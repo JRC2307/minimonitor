@@ -152,7 +152,17 @@ pub async fn hub_cuentas(
     .await
 }
 
-/// `/hub/hermes/{*rest}` — hermeshub. Read-only.
+/// POST-able hermeshub endpoints for the launcher's quick-prompt lane: send a
+/// message, create the channel, set its model, mark it read. Everything else
+/// stays read-only (no channel close/reopen, no relay control).
+fn hermes_post_allowed(rest: &str) -> bool {
+    rest == "send"
+        || rest == "channels"
+        || (rest.starts_with("channels/") && (rest.ends_with("/model") || rest.ends_with("/read")))
+}
+
+/// `/hub/hermes/{*rest}` — hermeshub. GET everywhere; POST only on the
+/// quick-prompt whitelist above.
 pub async fn hub_hermes(
     State(state): State<AppState>,
     method: Method,
@@ -160,16 +170,11 @@ pub async fn hub_hermes(
     RawQuery(query): RawQuery,
     body: Bytes,
 ) -> Response {
+    let allowed: &[Method] = if hermes_post_allowed(&rest) {
+        &[Method::GET, Method::POST]
+    } else {
+        &[Method::GET]
+    };
     let base = state.hermeshub_url.clone();
-    proxy(
-        &state,
-        &base,
-        None,
-        &[Method::GET],
-        method,
-        &rest,
-        query,
-        body,
-    )
-    .await
+    proxy(&state, &base, None, allowed, method, &rest, query, body).await
 }

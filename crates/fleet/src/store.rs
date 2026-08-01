@@ -98,7 +98,8 @@ impl Catalog {
 
     /// The built-in catalog: the caguaserver apps plus the remote-work tools
     /// on the Mac mini, all reachable over the tailnet. Grouped into launcher
-    /// sections via `category` — sections render in catalog order.
+    /// sections via `category` — sections render in catalog order:
+    /// daily · money · life · work · dev · infra.
     pub fn builtin() -> Catalog {
         const SERVER: &str = "http://caguaserver.tail82f3c6.ts.net";
         const MAC: &str = "http://js-mac-mini.tail82f3c6.ts.net";
@@ -139,261 +140,89 @@ impl Catalog {
                    port: u16,
                    icon: &str,
                    hue: u16| { app(cat, slug, name, tagline, MAC, "mac", port, icon, hue) };
+        // Loopback/tailnet-IP binds fronted by `tailscale serve` — HTTPS URL,
+        // LED still matched against the raw port on caguaserver.
+        let tls = |cat: &str,
+                   slug: &str,
+                   name: &str,
+                   tagline: &str,
+                   port: u16,
+                   icon: &str,
+                   hue: u16| StoreApp {
+            slug: slug.to_owned(),
+            name: name.to_owned(),
+            tagline: tagline.to_owned(),
+            url: format!("https://caguaserver.tail82f3c6.ts.net:{port}"),
+            port: Some(port),
+            host: Some("caguaserver".to_owned()),
+            icon: icon.to_owned(),
+            hue,
+            category: cat.to_owned(),
+            private: false,
+        };
+        // External/public URL — no port, no LED.
+        let ext = |cat: &str,
+                   slug: &str,
+                   name: &str,
+                   tagline: &str,
+                   url: &str,
+                   icon: &str,
+                   hue: u16| StoreApp {
+            slug: slug.to_owned(),
+            name: name.to_owned(),
+            tagline: tagline.to_owned(),
+            url: url.to_owned(),
+            port: None,
+            host: None,
+            icon: icon.to_owned(),
+            hue,
+            category: cat.to_owned(),
+            private: false,
+        };
         let mut apps = vec![
-                // ── daily — the things opened every day ──────────────────────
-                // brief page binds via tailscale serve — HTTPS like calendario
-                StoreApp {
-                    slug: "brief".to_owned(),
-                    name: "brief".to_owned(),
-                    tagline: "panel del día".to_owned(),
-                    url: "https://caguaserver.tail82f3c6.ts.net:8092".to_owned(),
-                    port: Some(8092),
-                    host: Some("caguaserver".to_owned()),
-                    icon: "sun".to_owned(),
-                    hue: 15,
-                    category: "daily".to_owned(),
-                    private: false,
-                },
-                // genealogy binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
-                StoreApp {
-                    slug: "genealogy".to_owned(),
-                    name: "genealogy".to_owned(),
-                    tagline: "arbol familiar".to_owned(),
-                    url: "https://caguaserver.tail82f3c6.ts.net:3015".to_owned(),
-                    port: Some(3015),
-                    host: Some("caguaserver".to_owned()),
-                    icon: "mesh".to_owned(),
-                    hue: 200,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // calendario binds 127.0.0.1 — reachable only via tailscale serve (HTTPS)
-                StoreApp {
-                    slug: "calendario".to_owned(),
-                    name: "calendario".to_owned(),
-                    tagline: "agenda self-hosted".to_owned(),
-                    url: "https://caguaserver.tail82f3c6.ts.net:8791".to_owned(),
-                    port: Some(8791),
-                    host: Some("caguaserver".to_owned()),
-                    icon: "calendar".to_owned(),
-                    hue: 38,
-                    category: "daily".to_owned(),
-                    private: false,
-                },
-                // whoop-snapshot binds 127.0.0.1 → tailscale serve HTTPS
-                StoreApp {
-                    slug: "vitals".to_owned(),
-                    name: "vitals".to_owned(),
-                    tagline: "whoop health tracker".to_owned(),
-                    url: "https://caguaserver.tail82f3c6.ts.net:3016".to_owned(),
-                    port: Some(3016),
-                    host: Some("caguaserver".to_owned()),
-                    icon: "pulse".to_owned(),
-                    hue: 350,
-                    category: "daily".to_owned(),
-                    private: false,
-                },
-                // hermeshub binds loopback → tailscale serve HTTPS (PWA needs it)
-                StoreApp {
-                    slug: "hermeshub".to_owned(),
-                    name: "hermes".to_owned(),
-                    tagline: "chat + command center".to_owned(),
-                    url: "https://caguaserver.tail82f3c6.ts.net:8796".to_owned(),
-                    port: Some(8796),
-                    host: Some("caguaserver".to_owned()),
-                    icon: "speech".to_owned(),
-                    hue: 275,
-                    category: "daily".to_owned(),
-                    private: false,
-                },
-                srv(
-                    "daily",
-                    "command-center",
-                    "backlog",
-                    "command center",
-                    8787,
-                    "kanban",
-                    265,
-                ),
-                srv("daily", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
-                srv("daily", "vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
-                srv("daily", "depas", "depas", "depas CDMX", 8794, "house", 160),
-                // dilo va por tailscale serve HTTPS — requisito del service worker (PWA)
-                StoreApp {
-                    slug: "dilo".to_owned(),
-                    name: "dilo".to_owned(),
-                    tagline: "aprende idiomas".to_owned(),
-                    url: "https://caguaserver.tail82f3c6.ts.net:8793".to_owned(),
-                    port: Some(8793),
-                    host: Some("caguaserver".to_owned()),
-                    icon: "speech".to_owned(),
-                    hue: 220,
-                    category: "daily".to_owned(),
-                    private: false,
-                },
-                // gastos binds loopback → tailscale serve HTTPS, explicit URL
-                StoreApp {
-                    slug: "gastos".to_owned(),
-                    name: "gastos".to_owned(),
-                    tagline: "expense tracker".to_owned(),
-                    url: "https://caguaserver.tail82f3c6.ts.net:8795".to_owned(),
-                    port: Some(8795),
-                    host: Some("caguaserver".to_owned()),
-                    icon: "coin".to_owned(),
-                    hue: 5,
-                    category: "daily".to_owned(),
-                    private: false,
-                },
-                // ── apps — products & experiments ────────────────────────────
-                srv("apps", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
-                srv("apps", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
-                srv("apps", "crux-playground", "crux", "playground", 3012, "hold", 25),
-                srv("apps", "iprep", "iprep", "interview prep", 3011, "cap", 210),
-                srv("apps", "portfolio", "portfolio", "inversiones", 3010, "chart", 95),
-                srv("apps", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
-                // external — public Cloudflare Worker (PIN gate), no port/LED
-                StoreApp {
-                    slug: "roners".to_owned(),
-                    name: "roners".to_owned(),
-                    tagline: "planes de rodaje · bodega · radios".to_owned(),
-                    url: "https://roner.mx".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "kanban".to_owned(),
-                    hue: 200,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Workers site, no port/LED
-                StoreApp {
-                    slug: "manos".to_owned(),
-                    name: "manos".to_owned(),
-                    tagline: "aprende LSM".to_owned(),
-                    url: "https://lds.javierr.com".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "hand".to_owned(),
-                    hue: 330,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Workers demo, no port/LED
-                StoreApp {
-                    slug: "puertacaja".to_owned(),
-                    name: "PuertaCaja".to_owned(),
-                    tagline: "POS + puerta QR para eventos pop-up (demo)".to_owned(),
-                    url: "https://puertacaja-popup.jrckc23.workers.dev".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "door".to_owned(),
-                    hue: 28,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Pages PWA, no port/LED
-                StoreApp {
-                    slug: "rawcam".to_owned(),
-                    name: "rawcam".to_owned(),
-                    tagline: "clean camera + overlays".to_owned(),
-                    url: "https://rawcam.pages.dev".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "camera".to_owned(),
-                    hue: 12,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Workers site, no port/LED
-                StoreApp {
-                    slug: "javierr".to_owned(),
-                    name: "javierr.com".to_owned(),
-                    tagline: "portfolio + javibot".to_owned(),
-                    url: "https://javierr.com".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "sun".to_owned(),
-                    hue: 260,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Workers demo, no port/LED
-                StoreApp {
-                    slug: "stay".to_owned(),
-                    name: "stay".to_owned(),
-                    tagline: "rental site (demo)".to_owned(),
-                    url: "https://stay.javierr.com".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "house".to_owned(),
-                    hue: 185,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Pages client site, no port/LED
-                StoreApp {
-                    slug: "pablorubin".to_owned(),
-                    name: "pablorubin".to_owned(),
-                    tagline: "portfolio de pintor (cliente)".to_owned(),
-                    url: "https://pablorubin.com".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "camera".to_owned(),
-                    hue: 45,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Workers client platform, no port/LED
-                StoreApp {
-                    slug: "microcentro".to_owned(),
-                    name: "microcentro".to_owned(),
-                    tagline: "POS · inventario (cliente)".to_owned(),
-                    url: "https://microcentro-web.jrckc23.workers.dev".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "kanban".to_owned(),
-                    hue: 145,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Workers experiment, no port/LED
-                StoreApp {
-                    slug: "paros".to_owned(),
-                    name: "paros".to_owned(),
-                    tagline: "eventos de escalada".to_owned(),
-                    url: "https://paros-web.jrckc23.workers.dev".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "mountain".to_owned(),
-                    hue: 100,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Workers experiment, no port/LED
-                StoreApp {
-                    slug: "locals".to_owned(),
-                    name: "locals".to_owned(),
-                    tagline: "recomendaciones locales".to_owned(),
-                    url: "https://locals.jrckc23.workers.dev".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "speech".to_owned(),
-                    hue: 20,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
-                // external — public Cloudflare Worker (PIN + KV notepad), no port/LED
-                StoreApp {
-                    slug: "pinpad".to_owned(),
-                    name: "pinpad".to_owned(),
-                    tagline: "nota compartida con PIN".to_owned(),
-                    url: "https://pad.javierr.com".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "app".to_owned(),
-                    hue: 305,
-                    category: "apps".to_owned(),
-                    private: false,
-                },
+                // ── daily — opened every day ─────────────────────────────────
+                tls("daily", "brief", "brief", "panel del día", 8092, "sun", 15),
+                tls("daily", "calendario", "calendario", "agenda self-hosted", 8791, "calendar", 38),
+                tls("daily", "hermeshub", "hermes", "chat + command center", 8796, "speech", 275),
+                srv("daily", "command-center", "backlog", "command center", 8787, "kanban", 265),
+                tls("daily", "vitals", "vitals", "whoop health tracker", 3016, "pulse", 350),
+                // ── money — the private drawer (PIN-locked below) ────────────
+                srv("money", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
+                tls("money", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
+                srv("money", "portfolio", "portfolio", "inversiones", 3010, "chart", 95),
+                srv("money", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
+                // ── life — travel, home, family, hobbies ─────────────────────
+                srv("life", "vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
+                srv("life", "depas", "depas", "depas CDMX", 8794, "house", 160),
+                tls("life", "dilo", "dilo", "aprende idiomas", 8793, "speech", 220),
+                tls("life", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),
+                srv("life", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
+                ext("life", "paros", "paros", "eventos de escalada",
+                    "https://paros-web.jrckc23.workers.dev", "mountain", 100),
+                ext("life", "locals", "locals", "recomendaciones locales",
+                    "https://locals.jrckc23.workers.dev", "speech", 20),
+                // ── work — shipped products & client sites ───────────────────
+                ext("work", "javierr", "javierr.com", "portfolio + javibot",
+                    "https://javierr.com", "sun", 260),
+                ext("work", "roners", "roners", "planes de rodaje · bodega · radios",
+                    "https://roner.mx", "kanban", 200),
+                ext("work", "pablorubin", "pablorubin", "portfolio de pintor (cliente)",
+                    "https://pablorubin.com", "camera", 45),
+                ext("work", "microcentro", "microcentro", "POS · inventario (cliente)",
+                    "https://microcentro-web.jrckc23.workers.dev", "kanban", 145),
+                ext("work", "puertacaja", "PuertaCaja", "POS + puerta QR para eventos pop-up (demo)",
+                    "https://puertacaja-popup.jrckc23.workers.dev", "door", 28),
+                ext("work", "stay", "stay", "rental site (demo)",
+                    "https://stay.javierr.com", "house", 185),
+                srv("work", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
+                srv("work", "crux-playground", "crux", "playground", 3012, "hold", 25),
+                srv("work", "iprep", "iprep", "interview prep", 3011, "cap", 210),
+                ext("work", "manos", "manos", "aprende LSM",
+                    "https://lds.javierr.com", "hand", 330),
+                ext("work", "rawcam", "rawcam", "clean camera + overlays",
+                    "https://rawcam.pages.dev", "camera", 12),
+                ext("work", "pinpad", "pinpad", "nota compartida con PIN",
+                    "https://pad.javierr.com", "app", 305),
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
                 // hermes dashboard (official web UI) on the mini — binds the
@@ -430,19 +259,8 @@ impl Catalog {
                 srv("infra", "uptime-kuma", "kuma", "uptime checks", 3001, "pulse", 130),
                 srv("infra", "beszel", "beszel", "host metrics", 8090, "gauge", 190),
                 srv("infra", "ntfy", "ntfy", "push notifs", 8082, "bell", 320),
-                // external console — no port, no LED
-                StoreApp {
-                    slug: "tailscale".to_owned(),
-                    name: "tailscale".to_owned(),
-                    tagline: "tailnet admin".to_owned(),
-                    url: "https://login.tailscale.com/admin/machines".to_owned(),
-                    port: None,
-                    host: None,
-                    icon: "mesh".to_owned(),
-                    hue: 200,
-                    category: "infra".to_owned(),
-                    private: false,
-                },
+                ext("infra", "tailscale", "tailscale", "tailnet admin",
+                    "https://login.tailscale.com/admin/machines", "mesh", 200),
         ];
         // Money-facing apps are locked by default (PIN unlock, session-scoped).
         for a in &mut apps {
@@ -491,7 +309,7 @@ mod tests {
             app.url,
             "https://puertacaja-popup.jrckc23.workers.dev"
         );
-        assert_eq!(app.category, "apps");
+        assert_eq!(app.category, "work");
         assert_eq!(app.icon, "door");
         assert_eq!(app.port, None);
         assert_eq!(app.host, None);

@@ -71,6 +71,7 @@ pub fn build_router(db_path: PathBuf) -> Router {
         cuentas_url: "http://127.0.0.1:8789".to_owned(),
         cuentas_basic_auth: None,
         hermeshub_url: "http://127.0.0.1:8796".to_owned(),
+        vitals_url: "http://127.0.0.1:3016".to_owned(),
         money_pin: None,
     })
 }
@@ -117,6 +118,7 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/hub/cc/{*rest}", any(hub::hub_cc))
         .route("/hub/cuentas/{*rest}", any(hub::hub_cuentas))
         .route("/hub/hermes/{*rest}", any(hub::hub_hermes))
+        .route("/hub/vitals/{*rest}", any(hub::hub_vitals))
         // HTML views (askama, server-rendered)
         .route("/inventory", get(routes::get_index))
         .route("/node/{id}", get(routes::get_node_html))
@@ -179,6 +181,7 @@ pub async fn run_with(
         cuentas_url: cfg.cuentas_url.clone(),
         cuentas_basic_auth: cfg.cuentas_basic_auth.clone(),
         hermeshub_url: cfg.hermeshub_url.clone(),
+        vitals_url: cfg.vitals_url.clone(),
         money_pin: cfg.money_pin.clone(),
     });
 
@@ -753,6 +756,7 @@ mod tests {
             cuentas_url: "http://127.0.0.1:1".to_owned(),
             cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
+            vitals_url: "http://127.0.0.1:1".to_owned(),
             money_pin: Some("4242".to_owned()),
         })
     }
@@ -1505,6 +1509,7 @@ mod tests {
             cuentas_url: cc_url.to_owned(),
             cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
+            vitals_url: "http://127.0.0.1:1".to_owned(),
             money_pin: Some("4242".to_owned()),
         })
     }
@@ -1664,6 +1669,7 @@ mod tests {
             cuentas_url: base,
             cuentas_basic_auth: Some("cagua:secreta".to_owned()),
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
+            vitals_url: "http://127.0.0.1:1".to_owned(),
             money_pin: Some("4242".to_owned()),
         });
         let req = Request::builder()
@@ -1699,6 +1705,7 @@ mod tests {
             cuentas_url: "http://127.0.0.1:1".to_owned(),
             cuentas_basic_auth: None,
             hermeshub_url: "http://127.0.0.1:1".to_owned(),
+            vitals_url: "http://127.0.0.1:1".to_owned(),
             money_pin: None,
         });
         let req = Request::builder()
@@ -1760,7 +1767,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn store_has_search_and_now_strip() {
+    async fn store_has_search_and_widgets() {
         let f = seed_db(&[]);
         let router = full_router(f.path().to_path_buf());
         let (status, html) = html_get(router, "/").await;
@@ -1770,8 +1777,12 @@ mod tests {
             "search input missing:\n{html}"
         );
         assert!(
-            html.contains(r#"id="now-strip""#),
-            "now-strip missing:\n{html}"
+            html.contains(r#"id="widgets""#),
+            "widget board missing:\n{html}"
+        );
+        assert!(
+            html.contains(r#"id="w-heart""#) && html.contains(r#"id="pulse""#),
+            "heart widget / pulse feed missing:\n{html}"
         );
         assert!(
             html.contains("/static/store.js"),

@@ -161,6 +161,18 @@ fn hermes_post_allowed(rest: &str) -> bool {
         || (rest.starts_with("channels/") && (rest.ends_with("/model") || rest.ends_with("/read")))
 }
 
+/// `/hub/vitals/{*rest}` — vitals (WHOOP dashboard). Read-only.
+pub async fn hub_vitals(
+    State(state): State<AppState>,
+    method: Method,
+    Path(rest): Path<String>,
+    RawQuery(query): RawQuery,
+    body: Bytes,
+) -> Response {
+    let base = state.vitals_url.clone();
+    proxy(&state, &base, None, &[Method::GET], method, &rest, query, body).await
+}
+
 /// `/hub/hermes/{*rest}` — hermeshub. GET everywhere; POST only on the
 /// quick-prompt whitelist above.
 pub async fn hub_hermes(

@@ -114,6 +114,7 @@ body.store {
 
 .sys {
   display: inline-block;
+  text-decoration: none;
   margin-top: 0.8rem;
   font-size: 0.68rem;
   letter-spacing: 0.14em;
@@ -137,6 +138,7 @@ body.store {
   z-index: 1;
 }
 @media (min-width: 900px) { .shell { max-width: 860px; } }
+@media (min-width: 700px) { .tag { display: block; } }
 
 /* ── command bar ──────────────────────────────────────────────────────────── */
 
@@ -307,15 +309,41 @@ body.store {
 .pulse-it {
   display: flex;
   align-items: center;
-  gap: 0.75em;
-  padding: 0.6em 0.95em;
-  text-decoration: none;
-  color: var(--fg);
   border-bottom: 1px solid var(--line);
   transition: background 0.12s ease;
 }
 .pulse-it:last-child { border-bottom: 0; }
 .pulse-it:hover { background: #ffffff07; }
+.pulse-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  padding: 0.6em 0.4em 0.6em 0.95em;
+  text-decoration: none;
+  color: var(--fg);
+}
+.pulse-acts { flex: none; display: flex; gap: 0.25rem; padding-right: 0.6rem; }
+.pulse-act {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: #ffffff05;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.pulse-act:hover { color: var(--fg); border-color: #313d51; }
+.pulse-act:disabled { opacity: 0.4; }
+.pulse-act svg {
+  width: 0.95rem; height: 0.95rem;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 .pulse-dot {
   flex: none;
   width: 0.42rem;
@@ -332,6 +360,9 @@ body.store {
   gap: 0.05rem;
 }
 .pulse-name {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
   font-size: 0.72rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -357,75 +388,101 @@ body.store {
 }
 .pulse-warn .pulse-n { background: var(--amber); }
 
-/* ── now strip — quiet live cards ─────────────────────────────────────────── */
+/* ── widget board — the key surface: live data in squares ─────────────────── */
 
-.now {
-  display: flex;
-  gap: 0.6rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  margin: 0 -1.1rem 1.7rem;
-  padding: 0.15rem 1.1rem 0.35rem;
-  scroll-snap-type: x proximity;
+.wgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.7rem;
+  margin-bottom: 1.8rem;
 }
-.now::-webkit-scrollbar { display: none; }
-.now:empty { display: none; }
+@media (min-width: 700px) { .wgrid { grid-template-columns: repeat(3, 1fr); } }
 
-.now-card {
-  flex: none;
-  scroll-snap-align: start;
+.wg {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  min-width: 8.6rem;
-  max-width: 13.5rem;
+  justify-content: space-between;
+  gap: 0.3rem;
+  aspect-ratio: 1.28;
+  border: 1px solid var(--line);
+  border-radius: 1.05rem;
+  padding: 0.75rem 0.85rem 0.7rem;
   text-decoration: none;
   color: var(--fg);
-  border: 1px solid var(--line);
-  border-left: 2px solid hsl(var(--h) 40% 42%);
-  border-radius: 0.9rem;
-  padding: 0.66em 0.85em 0.6em;
-  background: linear-gradient(180deg, #ffffff06, #ffffff02);
-  transition: transform 0.12s ease, border-color 0.12s ease;
+  overflow: hidden;
+  background:
+    radial-gradient(130% 95% at 88% -12%, hsl(var(--h) 42% 24% / 0.26), transparent 58%),
+    linear-gradient(180deg, #ffffff06, #ffffff02);
+  transition: border-color 0.12s ease, transform 0.12s ease;
 }
-.now-card:hover { border-color: #2a3342; border-left-color: hsl(var(--h) 50% 52%); }
-.now-card:active { transform: scale(0.97); }
+.wg:hover { border-color: hsl(var(--h) 30% 34%); }
+.wg:active { transform: scale(0.97); }
+.wg.wg-zero { opacity: 0.55; }
 
-.now-k {
+.wg-k {
   display: inline-flex;
   align-items: center;
   gap: 0.45em;
-  font-size: 0.6rem;
-  letter-spacing: 0.22em;
+  font-size: 0.58rem;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: hsl(var(--h) 40% 62%);
+  color: hsl(var(--h) 42% 62%);
+  white-space: nowrap;
 }
-.now-k svg {
-  width: 0.85rem; height: 0.85rem;
+.wg-k svg {
+  width: 0.85rem; height: 0.85rem; flex: none;
   fill: none; stroke: currentColor; stroke-width: 1.7;
   stroke-linecap: round; stroke-linejoin: round;
 }
-.now-v {
-  font-size: 1.16rem;
-  font-weight: 500;
+
+.wg-v {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3em;
+  font-family: var(--serif);
+  font-size: 2.1rem;
+  font-weight: 300;
+  line-height: 1;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  overflow: hidden;
 }
-.now-v-sm {
-  font-size: 0.78rem;
-  font-weight: 400;
-  white-space: normal;
+.wg-unit {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+#w-wx .wg-v, #w-money .wg-v { font-size: 1.45rem; }
+
+.wg-t {
+  font-size: 0.76rem;
+  line-height: 1.4;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  line-height: 1.35;
 }
-.now-s {
-  font-size: 0.64rem;
+
+.wg-spark {
+  width: 100%;
+  height: 1.35rem;
+  flex: none;
+}
+.wg-spark polyline {
+  fill: none;
+  stroke: hsl(var(--h) 55% 58%);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wg-s {
+  font-size: 0.6rem;
   color: var(--muted);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -436,19 +493,19 @@ body.store {
 .cats {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1.6rem;
   width: 100%;
   flex: 1;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem 0.8rem;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem 0.6rem;
   align-content: start;
 }
-@media (min-width: 480px) { .grid { grid-template-columns: repeat(4, 1fr); } }
-@media (min-width: 900px) { .grid { grid-template-columns: repeat(5, 1fr); } }
+@media (min-width: 480px) { .grid { grid-template-columns: repeat(5, 1fr); } }
+@media (min-width: 900px) { .grid { grid-template-columns: repeat(6, 1fr); } }
 
 .tile {
   display: flex;
@@ -470,7 +527,7 @@ body.store {
    until every delay has elapsed, which on a busy mobile GPU looks like a blank
    page. Content appears instantly instead. */
 @media (max-width: 700px) {
-  .tile, .now-card { animation: none; }
+  .tile { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -478,7 +535,7 @@ body.store {
 
 .squircle {
   position: relative;
-  width: min(100%, 4.5rem);
+  width: min(100%, 3.8rem);
   aspect-ratio: 1;
   border-radius: 27%;
   display: grid;
@@ -517,12 +574,13 @@ body.store {
 .tile.down .squircle { filter: saturate(0.35) brightness(0.75); }
 .tile.down .label { color: var(--muted); }
 
-.label { font-size: 0.8rem; letter-spacing: 0.02em; }
+.label { font-size: 0.72rem; letter-spacing: 0.02em; }
 .label mark {
   background: none;
   color: hsl(var(--h) 75% 74%);
 }
 .tag {
+  display: none;
   font-size: 0.62rem;
   color: var(--faint);
   letter-spacing: 0.04em;
@@ -556,13 +614,13 @@ body:not(.unlocked) .tile.priv .squircle { filter: saturate(0.4) brightness(0.8)
 body:not(.unlocked) .tile.priv .tag { filter: blur(3px); }
 body.unlocked .tile.priv .lock { display: none; }
 
-.now-lock {
+.wg-lock {
   width: 0.8rem; height: 0.8rem;
   margin-left: 0.2em;
   color: var(--amber);
 }
-.now-card.now-locked .now-v { letter-spacing: 0.25em; color: var(--muted); }
-body.unlocked .now-lock { display: none; }
+.wg.wg-locked .wg-v { letter-spacing: 0.25em; color: var(--muted); font-family: var(--mono); }
+body.unlocked .wg-lock { display: none; }
 
 /* PIN popover */
 .pin-veil {
@@ -637,7 +695,7 @@ body.unlocked .now-lock { display: none; }
 .pin-go:hover { filter: brightness(1.1); }
 
 /* search state: hidden tiles/cats + selection ring */
-.tile.q-hide, .cat.q-hide, .now.q-hide, .pulse.q-hide { display: none; }
+.tile.q-hide, .cat.q-hide, .wgrid.q-hide, .pulse.q-hide { display: none; }
 .tile.sel .squircle {
   outline: 2px solid hsl(var(--h) 60% 60%);
   outline-offset: 3px;

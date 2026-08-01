@@ -10,11 +10,18 @@
   var date = document.getElementById('date');
   var days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   var months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  function greeting(h) {
+    if (h < 6) return 'a dormir';
+    if (h < 12) return 'buenos días';
+    if (h < 20) return 'buenas tardes';
+    return 'buenas noches';
+  }
   function tick() {
     var d = new Date();
     clock.textContent =
       String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    date.textContent = days[d.getDay()] + ' ' + d.getDate() + ' ' + months[d.getMonth()];
+    date.textContent = days[d.getDay()] + ' ' + d.getDate() + ' ' + months[d.getMonth()] +
+      ' · ' + greeting(d.getHours());
   }
   tick();
   setInterval(tick, 15000);
@@ -67,7 +74,7 @@
   // The gate is the server (/hub/cuentas/* requires X-Money-Pin); this is just
   // presentation. PIN lives in sessionStorage only — masked again per tab.
   var PIN_KEY = 'caguastore.moneyPin';
-  var moneyCard = document.getElementById('now-money');
+  var moneyCard = document.getElementById('w-money');
   var pinVeil = document.getElementById('pin-veil');
   var pinPop = document.getElementById('pin-pop');
   var pinIn = document.getElementById('pin-in');
@@ -89,15 +96,15 @@
       })
       .then(function (s) {
         var m = (s.this_month && s.this_month[0]) || null;
-        document.getElementById('now-money-v').textContent =
+        document.getElementById('w-money-v').textContent =
           m ? fmtMoney(m.net_cents) + ' net' : '—';
         var rc = (s.receivables && s.receivables.count) || 0;
         var rTotal = 0;
         var totals = (s.receivables && s.receivables.totals) || {};
         Object.keys(totals).forEach(function (k) { rTotal += totals[k]; });
-        document.getElementById('now-money-s').textContent =
+        document.getElementById('w-money-s').textContent =
           rc ? rc + ' receivable · ' + fmtMoney(rTotal) : 'this month · 0 receivable';
-        moneyCard.classList.remove('now-locked');
+        moneyCard.classList.remove('wg-locked');
       });
   }
 
@@ -149,55 +156,244 @@
     loadMoney(sessionStorage.getItem(PIN_KEY)).catch(function () {});
   }
 
-  // ── pulse — consolidated notifications ─────────────────────────────────────
-  // hermes channels with unread (skip the quick-prompt scratch channel) plus
-  // any catalog app whose LED reads down. Quiet when there is nothing.
-  var pulse = document.getElementById('pulse');
-  var pulseList = document.getElementById('pulse-list');
-
-  function pulseItem(href, hue, name, text, badge, time) {
-    return '<a class="pulse-it" style="--h:' + hue + '" href="' + esc(href) + '">' +
-      '<span class="pulse-dot"></span>' +
-      '<span class="pulse-body"><span class="pulse-name">' + esc(name) + '</span>' +
-      '<span class="pulse-text">' + esc(text) + '</span></span>' +
-      (time ? '<span class="pulse-time">' + esc(time) + '</span>' : '') +
-      (badge ? '<span class="pulse-n">' + esc(badge) + '</span>' : '') +
-      '</a>';
+  // ── toast ──────────────────────────────────────────────────────────────────
+  var toastTimer = null;
+  function toast(msg, ok) {
+    var el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      document.body.appendChild(el);
+    }
+    el.className = 'toast' + (ok ? ' ok' : '');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 2600);
   }
 
+  // ── pulse — consolidated, actionable notifications ─────────────────────────
+  // hermes channels with unread (skip the quick-prompt scratch channel) plus
+  // any catalog app whose LED reads down. Each item: ✓ resolve (mark read /
+  // dismiss) or 🤖 dispatch an agent through hermes. Quiet when empty.
+  var pulse = document.getElementById('pulse');
+  var pulseList = document.getElementById('pulse-list');
+  var dismissed = {};       // slug/name -> true, session-scoped
+  try { dismissed = JSON.parse(sessionStorage.getItem('caguastore.dismissed') || '{}'); }
+  catch (e) { dismissed = {}; }
+  function dismiss(key) {
+    dismissed[key] = true;
+    try { sessionStorage.setItem('caguastore.dismissed', JSON.stringify(dismissed)); }
+    catch (e) { /* private mode */ }
+  }
+
+  function pulseActions(kind, key) {
+    return '<span class="pulse-acts">' +
+      '<button type="button" class="pulse-act" data-act="ok" data-kind="' + esc(kind) +
+      '" data-key="' + esc(key) + '" title="resolve" aria-label="mark resolved">' +
+      '<svg viewBox="0 0 24 24"><use href="#i-check" xlink:href="#i-check"/></svg></button>' +
+      '<button type="button" class="pulse-act" data-act="agent" data-kind="' + esc(kind) +
+      '" data-key="' + esc(key) + '" title="send an agent" aria-label="send an agent">' +
+      '<svg viewBox="0 0 24 24"><use href="#i-bot" xlink:href="#i-bot"/></svg></button></span>';
+  }
+
+  var lastChannels = [];
   function renderPulse(channels) {
+    if (channels) lastChannels = channels;
     var items = [];
-    (channels || []).forEach(function (c) {
-      if (!c.unread || c.name === 'quick') return;
-      items.push(pulseItem(HERMES_URL, 275, c.name,
-        preview(c.last_text), String(c.unread), relTime(c.last_ts)));
+    (lastChannels || []).forEach(function (c) {
+      if (!c.unread || c.name === 'quick' || dismissed['ch:' + c.name]) return;
+      items.push('<div class="pulse-it" style="--h:275">' +
+        '<a class="pulse-main" href="' + esc(HERMES_URL) + '">' +
+        '<span class="pulse-dot"></span>' +
+        '<span class="pulse-body"><span class="pulse-name">' + esc(c.name) +
+        '<span class="pulse-time">' + esc(relTime(c.last_ts)) + '</span>' +
+        '<span class="pulse-n">' + esc(String(c.unread)) + '</span></span>' +
+        '<span class="pulse-text">' + esc(preview(c.last_text)) + '</span></span></a>' +
+        pulseActions('ch', c.name) + '</div>');
     });
     // apps down — read off the server-rendered tiles
     Array.prototype.forEach.call(document.querySelectorAll('.tile.down'), function (t) {
-      items.push('<a class="pulse-it pulse-warn" href="' + esc(t.href) + '">' +
+      var slug = t.dataset.slug || '';
+      if (dismissed['app:' + slug]) return;
+      items.push('<div class="pulse-it pulse-warn">' +
+        '<a class="pulse-main" href="' + esc(t.href) + '">' +
         '<span class="pulse-dot"></span>' +
         '<span class="pulse-body"><span class="pulse-name">' +
         esc(t.querySelector('.label').textContent) + '</span>' +
-        '<span class="pulse-text">app is down</span></span></a>');
+        '<span class="pulse-text">app is down</span></span></a>' +
+        pulseActions('app', slug) + '</div>');
     });
     pulseList.innerHTML = items.slice(0, 6).join('');
-    pulse.hidden = !items.length;
+    pulse.hidden = !items.length || !!q.value;
   }
 
-  getJSON('/hub/hermes/channels').then(renderPulse).catch(function () { renderPulse([]); });
+  function channelByName(name) {
+    return (lastChannels || []).filter(function (c) { return c.name === name; })[0];
+  }
+
+  pulseList.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.pulse-act') : null;
+    if (!b) return;
+    e.preventDefault();
+    var kind = b.dataset.kind, key = b.dataset.key, act = b.dataset.act;
+    if (act === 'ok') {
+      if (kind === 'ch') {
+        var c = channelByName(key);
+        if (c && c.last_id) {
+          postJSON('/hub/hermes/channels/' + encodeURIComponent(key) + '/read',
+            { last_id: c.last_id }).catch(function () {});
+        }
+        if (c) c.unread = 0;
+      }
+      dismiss(kind + ':' + key);
+      renderPulse(null);
+      toast('resolved · ' + key, true);
+      return;
+    }
+    // dispatch an agent through hermes
+    b.disabled = true;
+    var channel, text;
+    if (kind === 'app') {
+      channel = 'hermes';
+      text = 'caguastore: la app "' + key + '" se ve caída (LED down en el launcher). ' +
+        'Investiga en caguaserver y levántala; avísame qué era.';
+    } else {
+      channel = key;
+      text = 'revisa lo pendiente de arriba y encárgate — resuélvelo tú; ' +
+        'si necesitas algo mío, dímelo claro y corto.';
+    }
+    postJSON('/hub/hermes/send', { channel: channel, text: text }).then(function (r) {
+      if (!r.ok) throw new Error('send');
+      dismiss(kind + ':' + key);
+      renderPulse(null);
+      toast('agente avisado · ' + key, true);
+    }).catch(function () {
+      b.disabled = false;
+      toast('no llegó a hermes', false);
+    });
+  });
+
+  // ── correo / whatsapp widgets — parsed from the sweep bots' hub posts ──────
+  // correo channel: "🔴" marks mails needing a reply (fallback: "📧 N nuevos");
+  // pulso channel: "💬 N chat(s) esperan respuesta".
+  function updateCounts(channels) {
+    (channels || []).forEach(function (c) {
+      var txt = String(c.last_text || '');
+      if (c.name === 'correo') {
+        var reds = (txt.match(/🔴/g) || []).length;
+        var nuevo = txt.match(/📧\s*(\d+)/);
+        var n = reds || (nuevo ? parseInt(nuevo[1], 10) : 0);
+        document.getElementById('w-correo-v').textContent = String(n);
+        document.getElementById('w-correo-s').textContent =
+          (reds ? 'por responder' : 'nuevos') + ' · ' + relTime(c.last_ts);
+        var wc = document.getElementById('w-correo');
+        wc.classList.toggle('wg-zero', !n);
+        show(wc);
+      }
+      if (c.name === 'pulso') {
+        var m = txt.match(/(\d+)\s*chat/i);
+        if (!m) return;
+        var wn = parseInt(m[1], 10);
+        document.getElementById('w-whats-v').textContent = String(wn);
+        document.getElementById('w-whats-s').textContent =
+          'chats esperan · ' + relTime(c.last_ts);
+        var ww = document.getElementById('w-whats');
+        ww.classList.toggle('wg-zero', !wn);
+        show(ww);
+      }
+    });
+  }
+
+  function refreshPulse() {
+    getJSON('/hub/hermes/channels').then(function (chs) {
+      renderPulse(chs);
+      updateCounts(chs);
+    }).catch(function () { renderPulse(null); });
+  }
+  refreshPulse();
+  setInterval(refreshPulse, 90000);
+
+  // ── heart widget — live bpm + last-hour sparkline (vitals/WHOOP) ───────────
+  function drawSpark(el, points) {
+    if (!points || points.length < 2) { el.innerHTML = ''; return; }
+    var min = Infinity, max = -Infinity;
+    points.forEach(function (v) { if (v < min) min = v; if (v > max) max = v; });
+    var span = (max - min) || 1;
+    var step = 100 / (points.length - 1);
+    var d = points.map(function (v, i) {
+      return (i * step).toFixed(1) + ',' + (24 - ((v - min) / span) * 22).toFixed(1);
+    }).join(' ');
+    el.innerHTML = '<polyline points="' + d + '"/>';
+  }
+  function loadHeart() {
+    getJSON('/hub/vitals/vitals').then(function (v) {
+      var hr = v.hr || {};
+      if (!hr.bpm) return;
+      document.getElementById('w-heart-v').textContent = hr.bpm;
+      var lh = hr.lastHour || {};
+      var fresh = v.freshness || {};
+      var age = fresh.ageSeconds != null && fresh.ageSeconds < 300 ? 'en vivo' :
+        relTime(v.generatedAtIso);
+      document.getElementById('w-heart-s').textContent =
+        (lh.min ? lh.min + '–' + lh.max + ' última hora · ' : '') + age;
+      // downsample the raw stream to ≤48 points for the sparkline
+      var stream = hr.stream || [];
+      if (stream.length > 1) {
+        var stride = Math.max(1, Math.floor(stream.length / 48));
+        var pts = [];
+        for (var i = 0; i < stream.length; i += stride) pts.push(stream[i].bpm);
+        drawSpark(document.getElementById('w-heart-spark'), pts);
+      }
+      show(document.getElementById('w-heart'));
+    }).catch(function () {});
+  }
+  loadHeart();
+  setInterval(loadHeart, 60000);
+
+  // ── weather — CDMX snapshot (open-meteo, no key) ───────────────────────────
+  var WMO = [
+    [0, 'sun', 'despejado'], [1, 'sun', 'casi despejado'], [2, 'cloud', 'parcial'],
+    [3, 'cloud', 'nublado'], [45, 'cloud', 'niebla'], [48, 'cloud', 'niebla'],
+    [95, 'bolt', 'tormenta'], [96, 'bolt', 'tormenta'], [99, 'bolt', 'tormenta']
+  ];
+  function wmoLookup(code) {
+    for (var i = 0; i < WMO.length; i++) if (WMO[i][0] === code) return WMO[i];
+    if (code >= 71 && code <= 86) return [code, 'rain', 'nieve'];
+    if (code >= 51) return [code, 'rain', 'lluvia'];
+    return [code, 'cloud', ''];
+  }
+  getJSON('https://api.open-meteo.com/v1/forecast?latitude=19.43&longitude=-99.13' +
+    '&current=temperature_2m,weather_code' +
+    '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+    '&timezone=America%2FMexico_City&forecast_days=1')
+    .then(function (w) {
+      var cur = w.current || {};
+      var day = w.daily || {};
+      var kind = wmoLookup(cur.weather_code || 0);
+      var icon = document.getElementById('w-wx-icon');
+      icon.setAttribute('href', '#i-' + kind[1]);
+      icon.setAttribute('xlink:href', '#i-' + kind[1]);
+      document.getElementById('w-wx-v').textContent =
+        Math.round(cur.temperature_2m) + '° ' + kind[2];
+      var lo = Math.round((day.temperature_2m_min || [0])[0]);
+      var hi = Math.round((day.temperature_2m_max || [0])[0]);
+      var rain = (day.precipitation_probability_max || [0])[0];
+      document.getElementById('w-wx-s').textContent =
+        lo + '–' + hi + '° · lluvia ' + rain + '%';
+      show(document.getElementById('w-wx'));
+    }).catch(function () {});
 
   getJSON('/hub/cc/next').then(function (projects) {
     if (!Array.isArray(projects)) return;
-    var picks = projects.filter(function (p) { return !p.blocked && p.next_action; }).slice(0, 2);
-    picks.forEach(function (p, i) {
-      var card = document.getElementById('now-next-' + (i + 1));
-      if (!card) return;
-      card.href = '/board?project=' + p.project_id;
-      document.getElementById('now-next-' + (i + 1) + '-v').textContent = p.next_action;
-      document.getElementById('now-next-' + (i + 1) + '-s').textContent =
-        p.name + ' · ' + (p.bucket || 'next');
-      show(card);
-    });
+    var p = projects.filter(function (x) { return !x.blocked && x.next_action; })[0];
+    if (!p) return;
+    var card = document.getElementById('w-next-1');
+    card.href = '/board?project=' + p.project_id;
+    document.getElementById('w-next-1-v').textContent = p.next_action;
+    document.getElementById('w-next-1-s').textContent =
+      p.name + ' · ' + (p.bucket || 'next');
+    show(card);
   }).catch(function () {});
 
   // ── quick prompt (`>` mode) — any model, through hermes ────────────────────
@@ -311,7 +507,7 @@
   var q = document.getElementById('q');
   var qClear = document.getElementById('q-clear');
   var cmd = document.getElementById('cmd');
-  var nowStrip = document.getElementById('now-strip');
+  var nowStrip = document.getElementById('widgets');
   var taskHits = document.getElementById('task-hits');
   var hitList = document.getElementById('hit-list');
   var noHits = document.getElementById('no-hits');

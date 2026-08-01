@@ -51,6 +51,8 @@ pub struct AppState {
     pub cuentas_basic_auth: Option<String>,
     /// hermeshub base URL (`/hub/hermes/*` upstream).
     pub hermeshub_url: String,
+    /// vitals base URL (`/hub/vitals/*` upstream).
+    pub vitals_url: String,
     /// PIN for the money proxy (`X-Money-Pin` header). None → proxy disabled.
     pub money_pin: Option<String>,
 }

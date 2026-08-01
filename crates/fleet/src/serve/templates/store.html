@@ -64,6 +64,29 @@
             </span>
             <svg class="wg-spark fold-body" id="w-heart-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"></svg>
           </a>
+          <!-- marcar — one-tap context marks into the vitals journal (what am I doing now) -->
+          <div class="wg wg-wide wg-marks" id="w-marks" style="--h:355">
+            <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-pulse" xlink:href="#i-pulse"/></svg>marcar
+              <span class="marks-status" id="w-marks-status"></span></span>
+            <div class="marks-row" id="w-marks-tags">
+              <button type="button" class="mkch" data-tag="eat" style="--c:#FBBF24">eat</button>
+              <button type="button" class="mkch" data-tag="drink" style="--c:#38BDF8">drink</button>
+              <button type="button" class="mkch" data-tag="winddown" style="--c:#5EEAD4">wind down</button>
+              <button type="button" class="mkch" data-tag="wakeup" style="--c:#FDE047">wake up</button>
+              <button type="button" class="mkch" data-tag="biking" style="--c:#A3E635">bike</button>
+              <button type="button" class="mkch" data-tag="driving" style="--c:#60A5FA">drive</button>
+              <button type="button" class="mkch" data-tag="stress" style="--c:#FB923C">stress</button>
+              <button type="button" class="mkch" data-tag="smoke" style="--c:#A78BFA">smoke</button>
+              <button type="button" class="mkch" data-tag="exercise" style="--c:#34D399">exercise</button>
+            </div>
+            <div class="marks-row marks-when" id="w-marks-when">
+              <button type="button" class="mkwh on" data-off="0">now</button>
+              <button type="button" class="mkwh" data-off="900">-15m</button>
+              <button type="button" class="mkwh" data-off="1800">-30m</button>
+              <button type="button" class="mkwh" data-off="3600">-1h</button>
+              <button type="button" class="mkwh" data-off="7200">-2h</button>
+            </div>
+          </div>
           <a class="wg wg-chip" id="w-correo" style="--h:38" href="https://caguaserver.tail82f3c6.ts.net:8796" hidden>
             <span class="chip-ico"><svg viewBox="0 0 24 24"><use href="#i-bell" xlink:href="#i-bell"/></svg></span>
             <span class="chip-tx">

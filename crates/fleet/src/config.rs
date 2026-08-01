@@ -231,6 +231,9 @@ pub struct ServeConfig {
     /// vitals (WHOOP dashboard) base URL for the `/hub/vitals/*` proxy (GET only).
     #[serde(default = "default_vitals_url")]
     pub vitals_url: String,
+    /// polybot panel base URL for the `/hub/polybot/*` proxy (GET only).
+    #[serde(default = "default_polybot_url")]
+    pub polybot_url: String,
     /// portfolio base URL for the `/hub/portfolio/*` proxy (GET, PIN-gated).
     #[serde(default = "default_portfolio_url")]
     pub portfolio_url: String,
@@ -255,6 +258,9 @@ fn default_hermeshub_url() -> String {
 }
 fn default_vitals_url() -> String {
     "http://127.0.0.1:3016".to_owned()
+}
+fn default_polybot_url() -> String {
+    "http://127.0.0.1:3006".to_owned()
 }
 fn default_portfolio_url() -> String {
     "http://127.0.0.1:3010".to_owned()

@@ -243,6 +243,24 @@
     loadPortfolio(sessionStorage.getItem(PIN_KEY)).catch(function () {});
   }
 
+  // ── polybot chip: whole-account total + today's realized, nothing else ─────
+  function loadPolybot() {
+    return fetch('/hub/polybot/widget')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (w) {
+        if (!w || typeof w.total !== 'number') return;
+        var hoy = w.today_realized || 0;
+        document.getElementById('w-polybot-v').textContent =
+          '$' + w.total.toFixed(0);
+        var s = document.getElementById('w-polybot-s');
+        s.textContent = 'polybet · hoy ' + (hoy < 0 ? '-' : '+') +
+          '$' + Math.abs(hoy).toFixed(2);
+        s.style.color = hoy < 0 ? 'var(--bad, #f87171)' : '';
+        document.getElementById('w-polybot').hidden = false;
+      });
+  }
+  loadPolybot().catch(function () {});
+
   // ── toast ──────────────────────────────────────────────────────────────────
   var toastTimer = null;
   function toast(msg, ok) {

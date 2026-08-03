@@ -657,6 +657,114 @@
     });
   }
 
+  // ── quick prompt (`>` mode) — any model, through hermes ────────────────────
+  var MODEL_KEY = 'caguastore.model';
+  var modelsRow = document.getElementById('models');
+  var askPanel = document.getElementById('ask');
+  var askQText = document.getElementById('ask-q-text');
+  var askModel = document.getElementById('ask-model');
+  var askA = document.getElementById('ask-a');
+  var models = [];          // [{id,label,default}]
+  var modelsLoaded = false;
+  var askPollTimer = null;
+
+  function pickedModel() {
+    var saved = localStorage.getItem(MODEL_KEY);
+    var hit = models.filter(function (m) { return m.id === saved; })[0];
+    if (hit) return hit;
+    return models.filter(function (m) { return m.default; })[0] || models[0] || null;
+  }
+
+  function renderModels() {
+    var cur = pickedModel();
+    modelsRow.innerHTML = models.map(function (m) {
+      return '<button type="button" class="chip' +
+        (cur && m.id === cur.id ? ' on' : '') + '" data-model="' + esc(m.id) + '">' +
+        esc(m.label) + '</button>';
+    }).join('');
+  }
+  modelsRow.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-model]') : null;
+    if (!b) return;
+    localStorage.setItem(MODEL_KEY, b.dataset.model);
+    renderModels();
+    q.focus();
+  });
+
+  function loadModels() {
+    if (modelsLoaded) return Promise.resolve();
+    return getJSON('/hub/hermes/models').then(function (d) {
+      models = (d && d.models) || [];
+      modelsLoaded = true;
+      renderModels();
+    }).catch(function () { renderModels(); });
+  }
+
+  function stopAskPoll() {
+    if (askPollTimer) { clearTimeout(askPollTimer); askPollTimer = null; }
+  }
+
+  function closeAsk() {
+    stopAskPoll();
+    askPanel.hidden = true;
+  }
+  document.getElementById('ask-close').addEventListener('click', function () {
+    closeAsk();
+    q.focus();
+  });
+
+  function pollReply(afterId, deadline) {
+    askPollTimer = setTimeout(function () {
+      getJSON('/hub/hermes/messages?channel=quick&after_id=' + afterId).then(function (msgs) {
+        var reply = (msgs || []).filter(function (m) { return m.sender !== 'user'; })[0];
+        if (reply) {
+          askA.textContent = reply.text || '(empty reply)';
+          askA.classList.remove('thinking');
+          // keep quick chatter out of the pulse feed
+          postJSON('/hub/hermes/channels/quick/read', { last_id: reply.id }).catch(function () {});
+          return;
+        }
+        if (Date.now() > deadline) {
+          askA.textContent = 'no reply yet — it will land in hermes.';
+          askA.classList.remove('thinking');
+          return;
+        }
+        pollReply(afterId, deadline);
+      }).catch(function () {
+        if (Date.now() > deadline) {
+          askA.textContent = 'lost the connection — check hermes.';
+          askA.classList.remove('thinking');
+        } else {
+          pollReply(afterId, deadline);
+        }
+      });
+    }, 1500);
+  }
+
+  function sendAsk(text) {
+    var m = pickedModel();
+    stopAskPoll();
+    askPanel.hidden = false;
+    askQText.textContent = text;
+    askModel.textContent = m ? m.label : 'hermes';
+    askA.textContent = 'thinking';
+    askA.classList.add('thinking');
+    // ensure the scratch channel exists (409 = already there), pin the model,
+    // then send. Failures surface in the panel instead of dying silently.
+    postJSON('/hub/hermes/channels', { name: 'quick' }).then(function () {
+      return m ? postJSON('/hub/hermes/channels/quick/model', { model: m.id }) : null;
+    }).then(function () {
+      return postJSON('/hub/hermes/send', { channel: 'quick', text: text });
+    }).then(function (r) {
+      if (!r || !r.ok || !r.body || !r.body.id) throw new Error('send failed');
+      pollReply(r.body.id, Date.now() + 120000);
+    }).catch(function () {
+      askA.textContent = 'could not reach hermes.';
+      askA.classList.remove('thinking');
+    });
+  }
+
+
   // ── search / command bar ───────────────────────────────────────────────────
   var q = document.getElementById('q');
   var qClear = document.getElementById('q-clear');

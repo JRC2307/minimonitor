@@ -270,7 +270,7 @@ fn inventory_rows(
 const STORE_ICONS: &[&str] = &[
     "spade", "mountain", "hold", "cap", "kanban", "coin", "pulse", "gauge", "bell", "app", "term",
     "code", "mesh", "calendar", "plane", "chart", "bot", "sun", "hand", "door", "speech", "house",
-    "camera",
+    "camera", "map",
 ];
 
 /// The launcher home screen. Liveness LED per app: its catalog `port` appears

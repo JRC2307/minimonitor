@@ -195,6 +195,7 @@ impl Catalog {
                 srv("life", "vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
                 srv("life", "depas", "depas", "depas CDMX", 8794, "house", 160),
                 tls("life", "dilo", "dilo", "aprende idiomas", 8793, "speech", 220),
+                tls("life", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
                 tls("life", "mapas", "mapas", "mis lugares · sin google", 8799, "map", 130),
                 tls("life", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),
                 srv("life", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),

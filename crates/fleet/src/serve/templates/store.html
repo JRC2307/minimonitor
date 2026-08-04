@@ -25,10 +25,16 @@
     <!-- command bar: search apps & tasks, or `>` to ask hermes — global -->
     <div class="cmd" id="cmd">
       <span class="cmd-prompt" aria-hidden="true">&#10095;</span>
-      <input id="q" type="text" placeholder="search · &gt; ask" autocomplete="off"
+      <input id="q" type="text" placeholder="search · /g /x /m · &gt; ask" autocomplete="off"
              autocapitalize="off" spellcheck="false" aria-label="search apps and tasks, or ask hermes">
       <button class="cmd-clear" id="q-clear" aria-label="clear" hidden>&times;</button>
       <kbd class="cmd-kbd" aria-hidden="true">/</kbd>
+    </div>
+
+    <!-- command mode: shortcut cheatsheet (leading `/`) -->
+    <div class="cmd-hint" id="cmd-hint" hidden>
+      <kbd>/g</kbd> google &middot; <kbd>/x</kbd> x.com &middot; <kbd>/m</kbd> maps
+      &middot; <span class="cmd-hint-tip">algo.com &rarr; abre la página</span>
     </div>
 
     <!-- ask mode: model picker (chips) -->
@@ -40,7 +46,7 @@
       <div class="ask-a" id="ask-a"></div>
       <div class="ask-foot">
         <button type="button" class="ask-btn" id="ask-close">close</button>
-        <a class="ask-link" href="https://caguaserver.tail82f3c6.ts.net:8796/#c/quick" id="ask-open">open in hermes &#8594;</a>
+        <a class="ask-btn ask-open" href="https://caguaserver.tail82f3c6.ts.net:8796/#c/quick" id="ask-open">continuar en hermes &#8594;</a>
       </div>
     </section>
 

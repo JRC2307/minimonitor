@@ -1545,3 +1545,11 @@ body.board-page {
 .q-chg.dn { color: var(--red); }
 .q-foot { margin-top: 0.25rem; font-size: 0.62rem; color: var(--faint); }
 .quote.miss .q-price { font-size: 0.9rem; color: var(--muted); }
+
+/* tickers widget: labels are words ("raytheon"), not 3-char symbols, so the
+   fixed .mkt-tkr column from the mercado screen would overlap the symbol. */
+#w-tickers .mkt-tkr {
+  width: auto;
+  min-width: 3.4em;
+  margin-right: 0.5em;
+}

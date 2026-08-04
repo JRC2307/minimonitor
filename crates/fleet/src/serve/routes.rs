@@ -61,6 +61,9 @@ pub struct AppState {
     pub portfolio_token: Option<String>,
     /// PIN for the money proxy (`X-Money-Pin` header). None → proxy disabled.
     pub money_pin: Option<String>,
+    /// Home-screen ticker watchlist (`SYMBOL` or `SYMBOL:label`), served
+    /// ungated by `/api/tickers` — public prices carry no holding sizes.
+    pub tickers: std::sync::Arc<Vec<String>>,
 }
 
 // ── format helpers ────────────────────────────────────────────────────────────
@@ -425,11 +428,24 @@ static QUOTES_CACHE: std::sync::OnceLock<
     std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>,
 > = std::sync::OnceLock::new();
 
+/// Percent-encode the two non-alphanumerics Yahoo symbols carry that a URL path
+/// segment can't take literally: `^` (indices, `^GSPC`) and `=` is path-safe but
+/// encoded too so the whole segment is unambiguous.
+fn encode_symbol(sym: &str) -> String {
+    sym.chars()
+        .map(|c| match c {
+            '^' => "%5E".to_owned(),
+            '=' => "%3D".to_owned(),
+            _ => c.to_string(),
+        })
+        .collect()
+}
+
 /// Fetch one symbol's Yahoo v8 chart meta → quote JSON (None on any miss).
 async fn fetch_quote(http: reqwest::Client, symbol: String) -> Option<serde_json::Value> {
-    let url = format!(
-        "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=2d"
-    );
+    let path = encode_symbol(&symbol);
+    let url =
+        format!("https://query1.finance.yahoo.com/v8/finance/chart/{path}?interval=1d&range=2d");
     let resp = http
         .get(&url)
         .header(axum::http::header::USER_AGENT.as_str(), "Mozilla/5.0")
@@ -473,6 +489,28 @@ async fn fetch_quote(http: reqwest::Client, symbol: String) -> Option<serde_json
     }))
 }
 
+/// Parse a comma-separated symbol list: uppercased, deduped, ≤20 entries.
+/// `=` and `^` are allowed on purpose — without them FX pairs (`USDMXN=X`),
+/// futures (`BZ=F`) and indices (`^GSPC`) are silently dropped, which is what
+/// kept the peso off the board.
+fn parse_symbols(raw: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for s in raw.split(',') {
+        let s = s.trim().to_uppercase();
+        let ok = !s.is_empty()
+            && s.len() <= 12
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '=' | '^'));
+        if ok && !out.contains(&s) {
+            out.push(s);
+        }
+        if out.len() == 20 {
+            break;
+        }
+    }
+    out
+}
+
 /// `GET /api/quotes?symbols=RTX,XLE,BTC-USD` — batched Yahoo quotes with day
 /// change and an is-it-trading flag. Cached 5 min per symbol set, ≤20 symbols.
 pub async fn get_quotes(
@@ -480,13 +518,7 @@ pub async fn get_quotes(
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
     let raw = params.get("symbols").cloned().unwrap_or_default();
-    let mut symbols: Vec<String> = raw
-        .split(',')
-        .map(|s| s.trim().to_uppercase())
-        .filter(|s| !s.is_empty() && s.len() <= 12 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.'))
-        .take(20)
-        .collect();
-    symbols.dedup();
+    let symbols = parse_symbols(&raw);
     if symbols.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -512,6 +544,73 @@ pub async fn get_quotes(
     let quotes: Vec<serde_json::Value> = results.into_iter().flatten().collect();
 
     let body = serde_json::json!({ "quotes": quotes }).to_string();
+    cache
+        .lock()
+        .unwrap()
+        .insert(key, (std::time::Instant::now(), body.clone()));
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response()
+}
+
+// ── GET /api/tickers (home-screen watchlist — public data, no PIN) ──────────
+
+/// `GET /api/tickers` — the configured home watchlist (`[serve] tickers`),
+/// quoted and labelled. Deliberately **ungated**: it carries prices and day
+/// moves only, never a position size, so nothing here is worth a PIN. The
+/// PIN-gated `mercado` screen remains the place holdings values show up.
+pub async fn get_tickers(State(state): State<AppState>) -> Response {
+    // Entries are `SYMBOL` or `SYMBOL:label`; the label is display-only.
+    let mut labels: Vec<(String, String)> = Vec::new();
+    for entry in state.tickers.iter() {
+        let (sym, label) = match entry.split_once(':') {
+            Some((s, l)) => (s.trim(), l.trim()),
+            None => (entry.trim(), ""),
+        };
+        let parsed = parse_symbols(sym);
+        if let Some(s) = parsed.into_iter().next() {
+            let label = if label.is_empty() {
+                s.clone()
+            } else {
+                label.to_owned()
+            };
+            labels.push((s, label));
+        }
+    }
+    if labels.is_empty() {
+        return (
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            r#"{"tickers":[]}"#.to_owned(),
+        )
+            .into_response();
+    }
+
+    let key = format!("tickers:{}", labels.iter().map(|(s, _)| s.as_str()).collect::<Vec<_>>().join(","));
+    let cache = QUOTES_CACHE.get_or_init(Default::default);
+    if let Some((at, body)) = cache.lock().unwrap().get(&key).cloned()
+        && at.elapsed() < Duration::from_secs(300)
+    {
+        return ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response();
+    }
+
+    let tasks: Vec<_> = labels
+        .iter()
+        .map(|(sym, _)| fetch_quote(state.http.clone(), sym.clone()))
+        .collect();
+    let results = futures_util::future::join_all(tasks).await;
+
+    // Keep catalog order and drop misses, so the widget never renders a hole.
+    let tickers: Vec<serde_json::Value> = labels
+        .iter()
+        .zip(results)
+        .filter_map(|((_, label), quote)| {
+            let mut q = quote?;
+            if let Some(obj) = q.as_object_mut() {
+                obj.insert("label".to_owned(), serde_json::Value::String(label.clone()));
+            }
+            Some(q)
+        })
+        .collect();
+
+    let body = serde_json::json!({ "tickers": tickers }).to_string();
     cache
         .lock()
         .unwrap()

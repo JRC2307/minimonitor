@@ -76,6 +76,7 @@ pub fn build_router(db_path: PathBuf) -> Router {
         portfolio_url: "http://127.0.0.1:3010".to_owned(),
         portfolio_token: None,
         money_pin: None,
+        tickers: std::sync::Arc::new(crate::config::default_tickers()),
     })
 }
 
@@ -127,6 +128,7 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/api/news", get(routes::get_news))
         .route("/api/rss", get(routes::get_rss))
         .route("/api/quotes", get(routes::get_quotes))
+        .route("/api/tickers", get(routes::get_tickers))
         // HTML views (askama, server-rendered)
         .route("/inventory", get(routes::get_index))
         .route("/node/{id}", get(routes::get_node_html))
@@ -194,6 +196,7 @@ pub async fn run_with(
         portfolio_url: cfg.portfolio_url.clone(),
         portfolio_token: cfg.portfolio_token.clone(),
         money_pin: cfg.money_pin.clone(),
+        tickers: std::sync::Arc::new(cfg.tickers.clone()),
     });
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -772,6 +775,7 @@ mod tests {
             portfolio_url: "http://127.0.0.1:1".to_owned(),
             portfolio_token: None,
             money_pin: Some("4242".to_owned()),
+            tickers: std::sync::Arc::new(crate::config::default_tickers()),
         })
     }
 
@@ -1574,6 +1578,7 @@ mod tests {
             portfolio_url: "http://127.0.0.1:1".to_owned(),
             portfolio_token: None,
             money_pin: Some("4242".to_owned()),
+            tickers: std::sync::Arc::new(crate::config::default_tickers()),
         })
     }
 
@@ -1737,6 +1742,7 @@ mod tests {
             portfolio_url: "http://127.0.0.1:1".to_owned(),
             portfolio_token: None,
             money_pin: Some("4242".to_owned()),
+            tickers: std::sync::Arc::new(crate::config::default_tickers()),
         });
         let req = Request::builder()
             .uri("/hub/cuentas/auth-echo")
@@ -1776,6 +1782,7 @@ mod tests {
             portfolio_url: "http://127.0.0.1:1".to_owned(),
             portfolio_token: None,
             money_pin: None,
+            tickers: std::sync::Arc::new(crate::config::default_tickers()),
         });
         let req = Request::builder()
             .uri("/hub/cuentas/summary")

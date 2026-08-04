@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="stylesheet" href="/static/store.css?v=10">
+  <link rel="stylesheet" href="/static/store.css?v=11">
 </head>
 <body class="store">
   <div class="grain" aria-hidden="true"></div>
@@ -34,8 +34,19 @@
     <!-- command mode: shortcut cheatsheet (leading `/`) -->
     <div class="cmd-hint" id="cmd-hint" hidden>
       <kbd>/g</kbd> google &middot; <kbd>/x</kbd> x.com &middot; <kbd>/m</kbd> maps
+      &middot; <kbd>$amd</kbd> cotización
       &middot; <span class="cmd-hint-tip">algo.com &rarr; abre la página</span>
     </div>
+
+    <!-- quote mode: `$amd` in the bar → live cotización, no PIN (public data) -->
+    <section class="quote" id="quote" hidden aria-label="cotización">
+      <div class="q-head"><b class="q-sym" id="q-sym">—</b><span class="q-name" id="q-name"></span></div>
+      <div class="q-body">
+        <span class="q-price" id="q-price">—</span>
+        <span class="q-chg" id="q-chg"></span>
+      </div>
+      <div class="q-foot" id="q-foot"></div>
+    </section>
 
     <!-- ask mode: model picker (chips) -->
     <div class="models" id="models" hidden></div>
@@ -137,6 +148,13 @@
               <span class="wg-s" id="w-mkt-mini-s">mercado · tap to unlock</span>
             </span>
             <svg class="wg-lock" viewBox="0 0 24 24"><use href="#i-lock" xlink:href="#i-lock"/></svg>
+          </a>
+          <!-- tickers — watchlist quotes, public data only (no PIN, no holding sizes) -->
+          <a class="wg wg-wide" id="w-tickers" style="--h:95" href="#mercado" hidden>
+            <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-chart" xlink:href="#i-chart"/></svg>tickers
+              <button type="button" class="mkt-refresh" id="tk-refresh" aria-label="refresh">&#8635;</button></span>
+            <span class="mkt" id="w-tickers-list"></span>
+            <span class="wg-s" id="w-tickers-s">&nbsp;</span>
           </a>
           <a class="wg wg-strip" id="w-fx" style="--h:170" href="https://caguaserver.tail82f3c6.ts.net:8092" hidden>
             <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>peso</span>
@@ -294,6 +312,6 @@
     <button type="submit" class="pin-go" id="pin-go">unlock</button>
   </form>
 
-  <script src="/static/store.js?v=12" defer></script>
+  <script src="/static/store.js?v=13" defer></script>
 </body>
 </html>

@@ -240,6 +240,12 @@ pub struct ServeConfig {
     /// Bearer token presented upstream to the portfolio service.
     #[serde(default)]
     pub portfolio_token: Option<String>,
+    /// Home-screen ticker watchlist (`/api/tickers`). Each entry is a Yahoo
+    /// symbol with an optional display label after a `:` — e.g. `"USDMXN=X:peso"`.
+    /// Public market data only (no holding sizes), so this widget is NOT
+    /// PIN-gated: edit here and restart, no rebuild.
+    #[serde(default = "default_tickers")]
+    pub tickers: Vec<String>,
     /// PIN gating the `/hub/cuentas/*` money proxy (header `X-Money-Pin`).
     /// Unset → the money proxy is disabled entirely (money numbers never leave
     /// the server). Server-enforced — the UI lock is only presentation.
@@ -264,6 +270,17 @@ fn default_polybot_url() -> String {
 }
 fn default_portfolio_url() -> String {
     "http://127.0.0.1:3010".to_owned()
+}
+/// Top 3 holdings by value + the market tickers worth a glance (peso, Brent).
+/// Holdings shift — re-order this list in `fleet.toml` when they do.
+pub(crate) fn default_tickers() -> Vec<String> {
+    vec![
+        "BTC-USD:btc".to_owned(),
+        "RTX:raytheon".to_owned(),
+        "DVN:devon".to_owned(),
+        "USDMXN=X:peso".to_owned(),
+        "BZ=F:brent".to_owned(),
+    ]
 }
 
 // ─── Collect ─────────────────────────────────────────────────────────────────

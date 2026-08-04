@@ -504,6 +504,51 @@
     });
   })();
 
+  // ── tickers widget — the home watchlist, ungated ───────────────────────────
+  // Server-side list (`[serve] tickers` in fleet.toml): top holdings by symbol
+  // plus market tickers. Prices only, no position sizes, so no PIN — the
+  // PIN-gated `mercado` screen stays the place values appear.
+  function fmtPrice(v) {
+    if (v == null) return '—';
+    if (v >= 1000) return v.toFixed(0);
+    return v >= 10 ? v.toFixed(2) : v.toFixed(4);
+  }
+  function chgHtml(chg) {
+    if (chg == null) return '<span class="mkt-chg"></span>';
+    var cls = chg >= 0 ? ' up' : ' dn';
+    return '<span class="mkt-chg' + cls + '">' +
+      (chg >= 0 ? '+' : '−') + Math.abs(chg).toFixed(2) + '%</span>';
+  }
+  function loadTickers() {
+    return getJSON('/api/tickers').then(function (d) {
+      var list = d.tickers || [];
+      if (!list.length) return;
+      document.getElementById('w-tickers-list').innerHTML = list.map(function (t) {
+        return '<span class="mkt-row">' +
+          '<span class="mkt-dot' + (t.trading ? ' on' : '') + '"></span>' +
+          '<b class="mkt-tkr">' + esc(t.label || t.symbol) + '</b>' +
+          '<span class="mkt-hold">' + esc(t.symbol) + '</span>' +
+          '<span class="mkt-price">' + esc(fmtPrice(t.price)) + '</span>' +
+          chgHtml(t.changePct != null ? t.changePct : null) +
+          '</span>';
+      }).join('');
+      // "bolsa" = equities only. FX pairs and futures (`=X`, `=F`) trade nearly
+      // round the clock, so counting them would say "abierta" at midnight.
+      var anyOpen = list.some(function (t) {
+        return t.trading && !t.crypto && t.symbol.indexOf('=') === -1;
+      });
+      document.getElementById('w-tickers-s').textContent =
+        'bolsa ' + (anyOpen ? 'abierta' : 'cerrada') + ' · cripto 24/7';
+      show(document.getElementById('w-tickers'));
+    }).catch(function () {});
+  }
+  document.getElementById('tk-refresh').addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    loadTickers();
+  });
+  loadTickers();
+
   // ── peso widget — MXN vs world currencies (frankfurter/ECB, no key) ────────
   getJSON('https://api.frankfurter.dev/v1/latest?base=MXN&symbols=USD,EUR,GBP,JPY,BRL')
     .then(function (d) {
@@ -787,6 +832,45 @@
 
   function askMode() { return q.value.charAt(0) === '>'; }
   function cmdMode() { return q.value.charAt(0) === '/'; }
+  function quoteMode() { return q.value.charAt(0) === '$'; }
+
+  // ── `$amd` — quote lookup straight from the bar ────────────────────────────
+  var quotePanel = document.getElementById('quote');
+  var quoteTimerQ = null;
+  var quoteSeq = 0;   // drop replies that arrive after a newer keystroke
+  function renderQuote(sym, quote) {
+    quotePanel.classList.toggle('miss', !quote);
+    document.getElementById('q-sym').textContent = quote ? quote.symbol : sym;
+    document.getElementById('q-name').textContent = quote ? (quote.currency || '') : '';
+    document.getElementById('q-price').textContent =
+      quote ? fmtPrice(quote.price) : 'sin cotización';
+    var chgEl = document.getElementById('q-chg');
+    var chg = quote && quote.changePct != null ? quote.changePct : null;
+    chgEl.className = 'q-chg' + (chg == null ? '' : chg >= 0 ? ' up' : ' dn');
+    chgEl.textContent = chg == null ? ''
+      : (chg >= 0 ? '+' : '−') + Math.abs(chg).toFixed(2) + '% hoy';
+    document.getElementById('q-foot').textContent = quote
+      ? ((quote.trading ? 'abierto' : 'cerrado') +
+         (quote.prevClose != null ? ' · cierre previo ' + fmtPrice(quote.prevClose) : ''))
+      : 'revisa el símbolo (ej. $amd, $btc-usd, $usdmxn=x)';
+  }
+  function runQuote() {
+    var sym = q.value.slice(1).trim().toUpperCase();
+    if (!sym) { quotePanel.hidden = true; return; }
+    // BTC/ETH/SOL are only quotable as USD pairs on Yahoo — same rule as mercado.
+    var yq = (sym === 'BTC' || sym === 'ETH' || sym === 'SOL') ? sym + '-USD' : sym;
+    quotePanel.hidden = false;
+    document.getElementById('q-sym').textContent = sym;
+    document.getElementById('q-price').textContent = '…';
+    var seq = ++quoteSeq;
+    getJSON('/api/quotes?symbols=' + encodeURIComponent(yq)).then(function (d) {
+      if (seq !== quoteSeq) return;
+      renderQuote(yq, (d.quotes || [])[0] || null);
+    }).catch(function () {
+      if (seq !== quoteSeq) return;
+      renderQuote(yq, null);
+    });
+  }
 
   // slash shortcuts — `/g tacos` searches google, bare `/x` opens the site
   var SLASH = {
@@ -854,18 +938,28 @@
   function applyFilter() {
     var ask = askMode();
     var slash = cmdMode();
+    var quote = quoteMode();
     cmd.classList.toggle('ask-on', ask);
     cmdHint.hidden = !slash;
     modelsRow.hidden = !ask;
     if (ask) loadModels();
-    var needle = (ask || slash) ? '' : q.value.trim().toLowerCase();
+    // `$sym` — debounce so a 3-char ticker isn't 3 round trips.
+    if (quote) {
+      clearTimeout(quoteTimerQ);
+      quoteTimerQ = setTimeout(runQuote, 250);
+    } else {
+      clearTimeout(quoteTimerQ);
+      quoteSeq++;
+      quotePanel.hidden = true;
+    }
+    var needle = (ask || slash || quote) ? '' : q.value.trim().toLowerCase();
     qClear.hidden = !q.value;
     nowStrip.classList.toggle('q-hide', !!q.value);
     pulse.classList.toggle('q-hide', !!q.value);
     var any = false;
     tiles.forEach(function (t) {
       var hit = !needle || t._hay.indexOf(needle) !== -1 || subseq(t._hay, needle);
-      t.classList.toggle('q-hide', !hit || ask);
+      t.classList.toggle('q-hide', !hit || ask || quote);
       highlight(t, hit && needle && subseq(t._name, needle) ? needle : '');
       if (hit) any = true;
     });
@@ -876,8 +970,8 @@
     });
     setSel(needle ? 0 : -1);
     if (!needle) { tiles.forEach(function (t) { t.classList.remove('sel'); }); sel = -1; }
-    searchTasks(ask ? '' : needle);
-    noHits.hidden = ask || any || !needle || !taskHits.hidden;
+    searchTasks((ask || quote) ? '' : needle);
+    noHits.hidden = ask || quote || any || !needle || !taskHits.hidden;
   }
 
   // task search — one lazy fetch of the full task list, filtered client-side

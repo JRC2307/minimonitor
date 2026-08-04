@@ -1516,3 +1516,32 @@ body.board-page {
   cursor: pointer;
 }
 .mkwh.on { border-color: var(--line); color: var(--fg); background: #ffffff08; }
+
+/* cotización — `$amd` in the omnibox. Public quote, never gated. */
+.quote {
+  margin-bottom: 1.1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.95rem;
+  background: var(--ink-2);
+}
+.q-head { display: flex; align-items: baseline; gap: 0.6em; }
+.q-sym {
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+.q-name { font-size: 0.66rem; color: var(--muted); }
+.q-body {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7em;
+  margin-top: 0.2rem;
+  font-variant-numeric: tabular-nums;
+}
+.q-price { font-size: 1.5rem; font-weight: 300; }
+.q-chg { font-size: 0.85rem; color: var(--muted); }
+.q-chg.up { color: var(--up); }
+.q-chg.dn { color: var(--red); }
+.q-foot { margin-top: 0.25rem; font-size: 0.62rem; color: var(--faint); }
+.quote.miss .q-price { font-size: 0.9rem; color: var(--muted); }

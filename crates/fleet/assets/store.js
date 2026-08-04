@@ -769,6 +769,7 @@
   var q = document.getElementById('q');
   var qClear = document.getElementById('q-clear');
   var cmd = document.getElementById('cmd');
+  var cmdHint = document.getElementById('cmd-hint');
   var nowStrip = document.getElementById('widgets');
   var taskHits = document.getElementById('task-hits');
   var hitList = document.getElementById('hit-list');
@@ -785,6 +786,31 @@
   });
 
   function askMode() { return q.value.charAt(0) === '>'; }
+  function cmdMode() { return q.value.charAt(0) === '/'; }
+
+  // slash shortcuts — `/g tacos` searches google, bare `/x` opens the site
+  var SLASH = {
+    g: function (rest) {
+      return rest ? 'https://www.google.com/search?q=' + encodeURIComponent(rest)
+                  : 'https://www.google.com';
+    },
+    m: function (rest) {
+      return rest ? 'https://www.google.com/maps/search/' + encodeURIComponent(rest)
+                  : 'https://www.google.com/maps';
+    },
+    x: function (rest) {
+      return rest ? 'https://x.com/search?q=' + encodeURIComponent(rest)
+                  : 'https://x.com';
+    },
+  };
+
+  // bare domain (something.something[/path]) typed into the bar → open it
+  function urlFor(text) {
+    if (/\s/.test(text)) return null;
+    if (/^https?:\/\//i.test(text)) return text;
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(text)) return 'https://' + text;
+    return null;
+  }
 
   // subsequence match; returns match positions in `name` when they land there
   function subseq(hay, needle) {
@@ -827,10 +853,12 @@
 
   function applyFilter() {
     var ask = askMode();
+    var slash = cmdMode();
     cmd.classList.toggle('ask-on', ask);
+    cmdHint.hidden = !slash;
     modelsRow.hidden = !ask;
     if (ask) loadModels();
-    var needle = ask ? '' : q.value.trim().toLowerCase();
+    var needle = (ask || slash) ? '' : q.value.trim().toLowerCase();
     qClear.hidden = !q.value;
     nowStrip.classList.toggle('q-hide', !!q.value);
     pulse.classList.toggle('q-hide', !!q.value);
@@ -905,12 +933,7 @@
       if (e.key === 'Escape' && !pinPop.hidden) closePin();
       return;
     }
-    if (e.key === '/' && !typing) {
-      e.preventDefault();
-      q.focus();
-      return;
-    }
-    if (!typing && (e.key.length === 1 && /[a-z0-9>]/i.test(e.key)) &&
+    if (!typing && (e.key.length === 1 && /[a-z0-9>\/.]/i.test(e.key)) &&
         !e.metaKey && !e.ctrlKey && !e.altKey) {
       q.focus(); // plain typing focuses search; the char lands in the input
       return;
@@ -934,6 +957,16 @@
         return;
       }
       if (!q.value.trim()) return; // empty search: Enter is a no-op
+      if (cmdMode()) {
+        var parts = q.value.slice(1).trim().split(/\s+/);
+        var fn = SLASH[(parts[0] || '').toLowerCase()];
+        // unknown shortcut → google the whole thing
+        window.location.href = fn ? fn(parts.slice(1).join(' '))
+                                  : SLASH.g(q.value.slice(1).trim());
+        return;
+      }
+      var url = urlFor(q.value.trim());
+      if (url) { window.location.href = url; return; }
       var vis = visibleTiles();
       var pick = vis[sel >= 0 ? sel : 0];
       if (pick) { window.location.href = pick.href; return; }

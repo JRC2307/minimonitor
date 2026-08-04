@@ -388,6 +388,21 @@ body.store {
   cursor: pointer;
 }
 .cmd-clear:hover { color: var(--fg); }
+.cmd-hint {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  margin: -0.5rem 0 1rem;
+  padding: 0 1em;
+}
+.cmd-hint kbd {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  padding: 0.05em 0.4em;
+  background: #ffffff06;
+}
+.cmd-hint-tip { color: var(--faint); }
 
 /* ── model picker (ask mode) ──────────────────────────────────────────────── */
 
@@ -466,6 +481,12 @@ body.store {
   text-decoration: none;
 }
 .ask-link:hover { text-decoration: underline; }
+a.ask-open {
+  color: var(--accent);
+  border-color: #313d51;
+  text-decoration: none;
+}
+a.ask-open:hover { color: var(--fg); }
 
 /* ── section heads — small serif italic with a hairline ───────────────────── */
 

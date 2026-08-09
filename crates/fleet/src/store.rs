@@ -239,16 +239,6 @@ impl Catalog {
                     "https://rawcam.pages.dev", "camera", 12),
                 ext("work", "pinpad", "pinpad", "nota compartida con PIN",
                     "https://pad.javierr.com", "app", 305),
-                // ── instalar — native apps: open these in Safari ON THE PHONE
-                // itms-services needs a real cert, which ts.net has; the phone
-                // also has to be in the .ipa's embedded profile. `ext` on
-                // purpose: these are static dirs behind `tailscale serve`, so
-                // there is no listening port on caguaserver for an LED to read
-                // and a tile with a port would sit permanently dark.
-                ext("instalar", "mapas-ipa", "mapas · instalar", "app nativa · OTA",
-                    "https://caguaserver.tail82f3c6.ts.net:8802", "map", 130),
-                ext("instalar", "crux-ipa", "crux · instalar", "app nativa · OTA",
-                    "https://caguaserver.tail82f3c6.ts.net:8801", "mountain", 150),
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
                 // hermes dashboard (official web UI) on the mini — binds the

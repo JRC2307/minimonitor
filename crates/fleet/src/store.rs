@@ -186,6 +186,11 @@ impl Catalog {
                 tls("daily", "hermeshub", "hermes", "chat + command center", 8796, "speech", 275),
                 srv("daily", "command-center", "backlog", "command center", 8787, "kanban", 265),
                 tls("daily", "vitals", "vitals", "whoop health tracker", 3016, "pulse", 350),
+                // Install links (doctrine 2026-08-09: every installable app's
+                // download link lives in the store). OTA pages are tailscale
+                // path-serves, not host ports — ext = no LED, correctly.
+                ext("daily", "pulso-app", "pulso·app", "instalar en iPhone",
+                    "https://caguaserver.tail82f3c6.ts.net:8803", "pulse", 350),
                 // ── money — the private drawer (PIN-locked below) ────────────
                 srv("money", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
                 tls("money", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
@@ -198,7 +203,11 @@ impl Catalog {
                 tls("life", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
                 tls("life", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
                 tls("life", "mapas", "mapas", "mis lugares · sin google", 8799, "map", 130),
+                ext("life", "mapas-app", "mapas·app", "instalar en iPhone",
+                    "https://caguaserver.tail82f3c6.ts.net:8802", "map", 130),
                 tls("life", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
+                ext("life", "fotos-app", "fotos·app", "instalar en iPhone",
+                    "https://caguaserver.tail82f3c6.ts.net:8804", "camera", 268),
                 tls("life", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),
                 srv("life", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
                 ext("life", "paros", "paros", "eventos de escalada",
@@ -221,6 +230,8 @@ impl Catalog {
                 tls("work", "estudio", "estudio", "brief de producción de video", 8798, "camera", 42),
                 srv("work", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
                 srv("work", "crux-playground", "crux", "playground", 3012, "hold", 25),
+                ext("work", "crux-app", "crux·app", "instalar en iPhone",
+                    "https://caguaserver.tail82f3c6.ts.net:8801", "hold", 25),
                 srv("work", "iprep", "iprep", "interview prep", 3011, "cap", 210),
                 ext("work", "manos", "manos", "aprende LSM",
                     "https://lds.javierr.com", "hand", 330),
@@ -228,6 +239,16 @@ impl Catalog {
                     "https://rawcam.pages.dev", "camera", 12),
                 ext("work", "pinpad", "pinpad", "nota compartida con PIN",
                     "https://pad.javierr.com", "app", 305),
+                // ── instalar — native apps: open these in Safari ON THE PHONE
+                // itms-services needs a real cert, which ts.net has; the phone
+                // also has to be in the .ipa's embedded profile. `ext` on
+                // purpose: these are static dirs behind `tailscale serve`, so
+                // there is no listening port on caguaserver for an LED to read
+                // and a tile with a port would sit permanently dark.
+                ext("instalar", "mapas-ipa", "mapas · instalar", "app nativa · OTA",
+                    "https://caguaserver.tail82f3c6.ts.net:8802", "map", 130),
+                ext("instalar", "crux-ipa", "crux · instalar", "app nativa · OTA",
+                    "https://caguaserver.tail82f3c6.ts.net:8801", "mountain", 150),
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
                 // hermes dashboard (official web UI) on the mini — binds the

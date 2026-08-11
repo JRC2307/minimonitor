@@ -212,6 +212,8 @@ impl Catalog {
                 srv("life", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
                 ext("life", "paros", "paros", "eventos de escalada",
                     "https://paros-web.jrckc23.workers.dev", "mountain", 100),
+                ext("life", "paros-app", "paros·app", "instalar en iPhone",
+                    "https://caguaserver.tail82f3c6.ts.net:8805", "mountain", 100),
                 ext("life", "locals", "locals", "recomendaciones locales",
                     "https://locals.jrckc23.workers.dev", "speech", 20),
                 // ── work — shipped products & client sites ───────────────────
@@ -227,6 +229,8 @@ impl Catalog {
                     "https://puertacaja-popup.jrckc23.workers.dev", "door", 28),
                 ext("work", "stay", "stay", "rental site (demo)",
                     "https://stay.javierr.com", "house", 185),
+                ext("work", "abogados-demo", "abogados·demo", "IA para despachos · PIN 12345",
+                    "https://demo.javierr.com", "bot", 230),
                 tls("work", "estudio", "estudio", "brief de producción de video", 8798, "camera", 42),
                 srv("work", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
                 srv("work", "crux-playground", "crux", "playground", 3012, "hold", 25),
@@ -240,7 +244,20 @@ impl Catalog {
                 ext("work", "pinpad", "pinpad", "nota compartida con PIN",
                     "https://pad.javierr.com", "app", 305),
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
-                mac("dev", "ttyd-main", "terminal", "tmux · claude code", 7681, "term", 120),
+                // ttyd is loopback-only behind `tailscale serve`, so its public
+                // tailnet endpoint is HTTPS. Plain HTTP on :7681 returns 400.
+                StoreApp {
+                    slug: "ttyd-main".to_owned(),
+                    name: "terminal".to_owned(),
+                    tagline: "tmux · claude code".to_owned(),
+                    url: "https://js-mac-mini.tail82f3c6.ts.net:7681".to_owned(),
+                    port: Some(7681),
+                    host: Some("mac".to_owned()),
+                    icon: "term".to_owned(),
+                    hue: 120,
+                    category: "dev".to_owned(),
+                    private: false,
+                },
                 // hermes dashboard (official web UI) on the mini — binds the
                 // tailscale IP directly so the app's own auth gate engages
                 StoreApp {

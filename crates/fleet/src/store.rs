@@ -207,6 +207,20 @@ impl Catalog {
                 ext("life", "mapas-app", "mapas·app", "instalar en iPhone",
                     "https://caguaserver.tail82f3c6.ts.net:8802", "map", 130),
                 tls("life", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
+                // grabadora en la mini (necesita el bridge de hermes + ffmpeg
+                // locales); loopback tras `tailscale serve` → HTTPS explícito
+                StoreApp {
+                    slug: "voz".to_owned(),
+                    name: "voz".to_owned(),
+                    tagline: "graba · máscaras · notas de voz".to_owned(),
+                    url: "https://js-mac-mini-1.tail82f3c6.ts.net:8809".to_owned(),
+                    port: Some(8809),
+                    host: Some("mac".to_owned()),
+                    icon: "mic".to_owned(),
+                    hue: 12,
+                    category: "life".to_owned(),
+                    private: false,
+                },
                 ext("life", "fotos-app", "fotos·app", "instalar en iPhone",
                     "https://caguaserver.tail82f3c6.ts.net:8804", "camera", 268),
                 tls("life", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),

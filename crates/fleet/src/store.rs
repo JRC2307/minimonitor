@@ -307,7 +307,6 @@ impl Catalog {
                 mac("dev", "ttyd-opencode", "oc·term", "opencode tty", 7682, "term", 85),
                 // ── infra — monitoring & plumbing ────────────────────────────
                 srv("infra", "uptime-kuma", "kuma", "uptime checks", 3001, "pulse", 130),
-                srv("infra", "beszel", "beszel", "host metrics", 8090, "gauge", 190),
                 srv("infra", "ntfy", "ntfy", "push notifs", 8082, "bell", 320),
                 ext("infra", "tailscale", "tailscale", "tailnet admin",
                     "https://login.tailscale.com/admin/machines", "mesh", 200),

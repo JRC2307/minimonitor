@@ -102,7 +102,7 @@ impl Catalog {
     /// daily · money · life · work · dev · infra.
     pub fn builtin() -> Catalog {
         const SERVER: &str = "http://caguaserver.tail82f3c6.ts.net";
-        const MAC: &str = "http://js-mac-mini.tail82f3c6.ts.net";
+        const MAC: &str = "http://caguamini.tail82f3c6.ts.net";
         let app = |cat: &str,
                    slug: &str,
                    name: &str,
@@ -213,7 +213,7 @@ impl Catalog {
                     slug: "voz".to_owned(),
                     name: "voz".to_owned(),
                     tagline: "graba · máscaras · notas de voz".to_owned(),
-                    url: "https://js-mac-mini-1.tail82f3c6.ts.net:8809".to_owned(),
+                    url: "https://caguamini.tail82f3c6.ts.net:8809".to_owned(),
                     port: Some(8809),
                     host: Some("mac".to_owned()),
                     icon: "mic".to_owned(),
@@ -267,7 +267,7 @@ impl Catalog {
                     slug: "ttyd-main".to_owned(),
                     name: "terminal".to_owned(),
                     tagline: "tmux · claude code".to_owned(),
-                    url: "https://js-mac-mini.tail82f3c6.ts.net:7681".to_owned(),
+                    url: "https://caguamini.tail82f3c6.ts.net:7681".to_owned(),
                     port: Some(7681),
                     host: Some("mac".to_owned()),
                     icon: "term".to_owned(),
@@ -295,7 +295,7 @@ impl Catalog {
                     slug: "hermes-tui".to_owned(),
                     name: "hermes·tui".to_owned(),
                     tagline: "agente oficial · web".to_owned(),
-                    url: "https://js-mac-mini.tail82f3c6.ts.net:7683".to_owned(),
+                    url: "https://caguamini.tail82f3c6.ts.net:7683".to_owned(),
                     port: Some(7683),
                     host: Some("mac".to_owned()),
                     icon: "bot".to_owned(),

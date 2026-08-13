@@ -7,7 +7,7 @@
 slug = "poker-helper"
 name = "poker"
 tagline = "odds sidekick"
-url = "http://caguaserver.tail82f3c6.ts.net:3013"
+url = "http://caguaserver.triceratops-adelie.ts.net:3013"
 port = 3013            # liveness LED: matched against fresh host_port rows
 host = "caguaserver"   # optional: only match rows from this node (substring)
 icon = "spade"
@@ -17,7 +17,7 @@ hue = 350       # tile accent hue, 0-360
 slug = "cuentas"
 name = "cuentas"
 tagline = "facturas & money"
-url = "http://caguaserver.tail82f3c6.ts.net:8789"
+url = "http://caguaserver.triceratops-adelie.ts.net:8789"
 port = 8789
 icon = "coin"
 hue = 45

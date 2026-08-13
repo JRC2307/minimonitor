@@ -22,7 +22,7 @@ are edits in the vault and vice-versa. For code work, launch Claude from this re
 Rust workspace: a cross-platform system-monitoring core lib + a macOS menu-bar
 tray app (local, per-Mac via LaunchAgent) + a headless agent that serves JSON
 snapshots + `fleet`, the control-center web app behind caguastore
-(https://caguaserver.tail82f3c6.ts.net). **Live**: `fleet-serve` +
+(https://caguaserver.triceratops-adelie.ts.net). **Live**: `fleet-serve` +
 `minimonitor-agent` run as systemd/local services on caguaserver; menubar/agent
 also run locally on Macs. Actively developed (git log 2026-07-11/12, mostly
 caguastore tile additions).
@@ -46,11 +46,11 @@ caguaserver, behind Tailscale HTTPS serve:
   `minimonitor-agent`; copy binaries to `~/.local/bin/` per the global
   caguastore-tile recipe.
 - `fleet serve` port: `:8099` (Tailscale-bound; also fronted via `tailscale serve`
-  as https://caguaserver.tail82f3c6.ts.net).
+  as https://caguaserver.triceratops-adelie.ts.net).
 - Separate observability stack (`deploy/docker-compose.yml`: Beszel :8090,
   Uptime-Kuma :3001, ntfy :8082, cloudflared) is docker-based, `deploy/README.md`
   has the full runbook.
 
 ## Command Center
 project_id: 15
-tasks: GET http://caguaserver.tail82f3c6.ts.net:8787/api/tasks?project_id=15
+tasks: GET http://caguaserver.triceratops-adelie.ts.net:8787/api/tasks?project_id=15

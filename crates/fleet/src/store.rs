@@ -9,7 +9,7 @@
 //! slug = "poker-helper"
 //! name = "poker"
 //! tagline = "odds sidekick"
-//! url = "http://caguaserver.tail82f3c6.ts.net:3013"
+//! url = "http://caguaserver.triceratops-adelie.ts.net:3013"
 //! port = 3013          # optional — matched against fresh host_port rows for the LED
 //! icon = "spade"       # key into the built-in SVG glyph set (see store.html sprite)
 //! hue = 350            # tile accent hue, 0–360
@@ -101,8 +101,8 @@ impl Catalog {
     /// sections via `category` — sections render in catalog order:
     /// daily · money · life · work · dev · infra.
     pub fn builtin() -> Catalog {
-        const SERVER: &str = "http://caguaserver.tail82f3c6.ts.net";
-        const MAC: &str = "http://caguamini.tail82f3c6.ts.net";
+        const SERVER: &str = "http://caguaserver.triceratops-adelie.ts.net";
+        const MAC: &str = "http://caguamini.triceratops-adelie.ts.net";
         let app = |cat: &str,
                    slug: &str,
                    name: &str,
@@ -152,7 +152,7 @@ impl Catalog {
             slug: slug.to_owned(),
             name: name.to_owned(),
             tagline: tagline.to_owned(),
-            url: format!("https://caguaserver.tail82f3c6.ts.net:{port}"),
+            url: format!("https://caguaserver.triceratops-adelie.ts.net:{port}"),
             port: Some(port),
             host: Some("caguaserver".to_owned()),
             icon: icon.to_owned(),
@@ -190,7 +190,7 @@ impl Catalog {
                 // download link lives in the store). OTA pages are tailscale
                 // path-serves, not host ports — ext = no LED, correctly.
                 ext("daily", "pulso-app", "pulso·app", "instalar en iPhone",
-                    "https://caguaserver.tail82f3c6.ts.net:8803", "pulse", 350),
+                    "https://caguaserver.triceratops-adelie.ts.net:8803", "pulse", 350),
                 // ── money — the private drawer (PIN-locked below) ────────────
                 srv("money", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
                 tls("money", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
@@ -205,7 +205,7 @@ impl Catalog {
                 tls("life", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
                 tls("life", "mapas", "mapas", "mis lugares · sin google", 8799, "map", 130),
                 ext("life", "mapas-app", "mapas·app", "instalar en iPhone",
-                    "https://caguaserver.tail82f3c6.ts.net:8802", "map", 130),
+                    "https://caguaserver.triceratops-adelie.ts.net:8802", "map", 130),
                 tls("life", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
                 // grabadora en la mini (necesita el bridge de hermes + ffmpeg
                 // locales); loopback tras `tailscale serve` → HTTPS explícito
@@ -213,7 +213,7 @@ impl Catalog {
                     slug: "voz".to_owned(),
                     name: "voz".to_owned(),
                     tagline: "graba · máscaras · notas de voz".to_owned(),
-                    url: "https://caguamini.tail82f3c6.ts.net:8809".to_owned(),
+                    url: "https://caguamini.triceratops-adelie.ts.net:8809".to_owned(),
                     port: Some(8809),
                     host: Some("mac".to_owned()),
                     icon: "mic".to_owned(),
@@ -222,13 +222,13 @@ impl Catalog {
                     private: false,
                 },
                 ext("life", "fotos-app", "fotos·app", "instalar en iPhone",
-                    "https://caguaserver.tail82f3c6.ts.net:8804", "camera", 268),
+                    "https://caguaserver.triceratops-adelie.ts.net:8804", "camera", 268),
                 tls("life", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),
                 srv("life", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
                 ext("life", "paros", "paros", "eventos de escalada",
                     "https://paros-web.jrckc23.workers.dev", "mountain", 100),
                 ext("life", "paros-app", "paros·app", "instalar en iPhone",
-                    "https://caguaserver.tail82f3c6.ts.net:8805", "mountain", 100),
+                    "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
                 ext("life", "locals", "locals", "recomendaciones locales",
                     "https://locals.jrckc23.workers.dev", "speech", 20),
                 // ── work — shipped products & client sites ───────────────────
@@ -252,7 +252,7 @@ impl Catalog {
                 srv("work", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
                 srv("work", "crux-playground", "crux", "playground", 3012, "hold", 25),
                 ext("work", "crux-app", "crux·app", "instalar en iPhone",
-                    "https://caguaserver.tail82f3c6.ts.net:8801", "hold", 25),
+                    "https://caguaserver.triceratops-adelie.ts.net:8801", "hold", 25),
                 srv("work", "iprep", "iprep", "interview prep", 3011, "cap", 210),
                 ext("work", "manos", "manos", "aprende LSM",
                     "https://lds.javierr.com", "hand", 330),
@@ -267,7 +267,7 @@ impl Catalog {
                     slug: "ttyd-main".to_owned(),
                     name: "terminal".to_owned(),
                     tagline: "tmux · claude code".to_owned(),
-                    url: "https://caguamini.tail82f3c6.ts.net:7681".to_owned(),
+                    url: "https://caguamini.triceratops-adelie.ts.net:7681".to_owned(),
                     port: Some(7681),
                     host: Some("mac".to_owned()),
                     icon: "term".to_owned(),
@@ -295,7 +295,7 @@ impl Catalog {
                     slug: "hermes-tui".to_owned(),
                     name: "hermes·tui".to_owned(),
                     tagline: "agente oficial · web".to_owned(),
-                    url: "https://caguamini.tail82f3c6.ts.net:7683".to_owned(),
+                    url: "https://caguamini.triceratops-adelie.ts.net:7683".to_owned(),
                     port: Some(7683),
                     host: Some("mac".to_owned()),
                     icon: "bot".to_owned(),

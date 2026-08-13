@@ -853,7 +853,7 @@ mod tests {
         let router = full_router(f.path().to_path_buf());
 
         for url in [
-            "https://caguaserver.tail82f3c6.ts.net/x",
+            "https://caguaserver.triceratops-adelie.ts.net/x",
             "https://localhost/feed",
             "https://127.0.0.1:8787/feed",
             "https://192.168.1.10/feed",

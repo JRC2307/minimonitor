@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  var HERMES_URL = 'https://caguaserver.tail82f3c6.ts.net:8796';
+  var HERMES_URL = 'https://caguaserver.triceratops-adelie.ts.net:8796';
   function hermesChat(name) { return HERMES_URL + '/#c/' + encodeURIComponent(name); }
 
   // ── clock ──────────────────────────────────────────────────────────────────

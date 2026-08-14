@@ -9,7 +9,7 @@
 //! slug = "poker-helper"
 //! name = "poker"
 //! tagline = "odds sidekick"
-//! url = "http://caguaserver.triceratops-adelie.ts.net:3013"
+//! url = "https://caguaserver.triceratops-adelie.ts.net:3013"
 //! port = 3013          # optional — matched against fresh host_port rows for the LED
 //! icon = "spade"       # key into the built-in SVG glyph set (see store.html sprite)
 //! hue = 350            # tile accent hue, 0–360
@@ -99,7 +99,20 @@ impl Catalog {
     /// The built-in catalog: the caguaserver apps plus the remote-work tools
     /// on the Mac mini, all reachable over the tailnet. Grouped into launcher
     /// sections via `category` — sections render in catalog order:
-    /// daily · instalar · money · life · work · dev · infra.
+    /// día · cuerpo · vida · medios · aprender · dinero · negocio · clientes ·
+    /// contenido · dev · instalar · infra.
+    ///
+    /// Taxonomy retune 2026-08-13: the old seven-section split (daily ·
+    /// instalar · money · life · work · dev · infra) lumped lifestyle, personal
+    /// tools and paid work together — `life` was a 14-tile drawer and `work`
+    /// held everything from client sites to the poker odds helper. Sections are
+    /// now narrower and each answers one question ("¿qué abro a diario?",
+    /// "¿escalada/salud?", "¿un cliente?"). Order is by how often the owner
+    /// reaches for the section, with the install shelf and the plumbing last.
+    ///
+    /// **Order matters**: a section's position on the launcher is the position
+    /// of its *first* tile here (see `routes::get_store`), so keep each
+    /// category's tiles contiguous and in the intended render order.
     pub fn builtin() -> Catalog {
         const SERVER: &str = "http://caguaserver.triceratops-adelie.ts.net";
         const MAC: &str = "http://caguamini.triceratops-adelie.ts.net";
@@ -123,6 +136,13 @@ impl Catalog {
             category: cat.to_owned(),
                     private: false,
         };
+        // Plain-HTTP tiles: the process binds a public port itself and there is
+        // **no** `tailscale serve` listener in front of it. Use `tls` instead
+        // the moment a service moves behind tailscale serve — an `http://` URL
+        // against an HTTPS listener returns a bare 400 ("Client sent an HTTP
+        // request to an HTTPS server"), which reads as a broken app. Verify with
+        // `curl -sk -o /dev/null -w '%{http_code}' https://<host>:<port>`:
+        // a connection refused means plain HTTP is correct.
         let srv = |cat: &str,
                    slug: &str,
                    name: &str,
@@ -180,55 +200,82 @@ impl Catalog {
             private: false,
         };
         let mut apps = vec![
-                // ── daily — opened every day ─────────────────────────────────
-                tls("daily", "brief", "brief", "panel del día", 8092, "sun", 15),
-                tls("daily", "calendario", "calendario", "agenda self-hosted", 8791, "calendar", 38),
-                tls("daily", "marketing", "marketing", "calendario de posts", 8811, "megaphone", 340),
-                tls("daily", "hermeshub", "hermes", "chat + command center", 8796, "speech", 275),
-                srv("daily", "command-center", "backlog", "command center", 8787, "kanban", 265),
-                tls("daily", "vitals", "vitals", "whoop health tracker", 3016, "pulse", 350),
-                // ── instalar — the download shelf ────────────────────────────
-                // Doctrine 2026-08-09: every installable app's download link
-                // lives in the store. These used to be scattered next to each
-                // app's web tile, which made "put this on a new phone" a
-                // scavenger hunt; they are one section now. OTA pages are
-                // `tailscale serve` path-serves rather than host ports, so
-                // `ext` is right — no LED to light.
-                ext("instalar", "cagua-app", "cagua·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8807", "app", 42),
-                ext("instalar", "pulso-app", "pulso·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8803", "pulse", 350),
-                ext("instalar", "brujula-app", "brújula·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8812", "compass", 10),
-                ext("instalar", "crux-app", "crux·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8801", "hold", 25),
-                ext("instalar", "mapas-app", "mapas·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8802", "map", 130),
-                ext("instalar", "fotos-app", "fotos·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8804", "camera", 268),
-                ext("instalar", "paros-app", "paros·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
-                ext("instalar", "crust-app", "crust·app", "instalar PWA · compartir → añadir",
-                    "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
-                // ── money — the private drawer (PIN-locked below) ────────────
-                srv("money", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
-                tls("money", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
-                srv("money", "portfolio", "portfolio", "inversiones", 3010, "chart", 95),
-                srv("money", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
-                // ── life — travel, home, family, hobbies ─────────────────────
-                srv("life", "vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
-                srv("life", "depas", "depas", "depas CDMX", 8794, "house", 160),
-                tls("life", "dilo", "dilo", "aprende idiomas", 8793, "speech", 220),
-                tls("life", "comida", "comida", "log · despensa · menús", 8806, "bowl", 90),
-                tls("life", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
-                tls("life", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
-                tls("life", "mapas", "mapas", "mis lugares · sin google", 8799, "map", 130),
-                tls("life", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
+                // ── día — the four he opens every single day ─────────────────
+                // Deliberately tiny: this section is the launcher's front door,
+                // so anything that isn't a genuine daily driver belongs below.
+                tls("día", "brief", "brief", "panel del día", 8092, "sun", 15),
+                tls("día", "calendario", "calendario", "agenda self-hosted", 8791, "calendar", 38),
+                tls("día", "hermeshub", "hermes", "chat + command center", 8796, "speech", 275),
+                srv("día", "command-center", "backlog", "command center", 8787, "kanban", 265),
+                // ── cuerpo — salud y escalada ────────────────────────────────
+                // vitals is health, the other three are climbing (training log,
+                // crag search, events). Same drawer because they answer the
+                // same question: "¿cómo está el cuerpo y a dónde escalo?".
+                tls("cuerpo", "vitals", "vitals", "whoop health tracker", 3016, "pulse", 350),
+                tls("cuerpo", "crux-playground", "crux", "playground", 3012, "hold", 25),
+                tls("cuerpo", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
+                ext("cuerpo", "paros", "paros", "eventos de escalada",
+                    "https://paros-web.jrckc23.workers.dev", "mountain", 100),
+                // ── vida — lugares, viajes, casa, comida, familia, ocio ──────
+                // El cajón de lo personal. Es la sección más grande a propósito:
+                // el dueño pidió explícitamente que mapas y poker vivieran aquí,
+                // así que "lo mío, fuera del trabajo" se queda como un solo
+                // lugar en vez de partirse en tres subsecciones cosméticas.
+                tls("vida", "mapas", "mapas", "mis lugares · sin google", 8799, "map", 130),
+                tls("vida", "vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
+                tls("vida", "comida", "comida", "log · despensa · menús", 8806, "bowl", 90),
+                tls("vida", "depas", "depas", "depas CDMX", 8794, "house", 160),
+                tls("vida", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),
+                // el poker es ocio, no trabajo — vivía en `work` sólo porque
+                // corre en la mini como los demás experimentos
+                tls("vida", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
+                ext("vida", "locals", "locals", "recomendaciones locales",
+                    "https://locals.jrckc23.workers.dev", "speech", 20),
                 // atlas geológico: `tailscale serve` sirve el directorio, no hay
                 // proceso escuchando → `ext`, sin LED. Es PWA y se instala desde
                 // la misma URL, por eso también está en la repisa de instalar.
-                ext("life", "crust", "crust", "placas · sismos · rocas",
+                ext("vida", "crust", "crust", "placas · sismos · rocas",
                     "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
+                // ── medios — la biblioteca personal ──────────────────────────
+                tls("medios", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
+                tls("medios", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
+                tls("medios", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
+                // ── aprender — idiomas, señas, entrevistas ───────────────────
+                tls("aprender", "dilo", "dilo", "aprende idiomas", 8793, "speech", 220),
+                ext("aprender", "manos", "manos", "aprende LSM",
+                    "https://lds.javierr.com", "hand", 330),
+                tls("aprender", "iprep", "iprep", "interview prep", 3011, "cap", 210),
+                // ── dinero — the private drawer (PIN-locked below) ───────────
+                tls("dinero", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
+                tls("dinero", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
+                srv("dinero", "portfolio", "portfolio", "inversiones", 3010, "chart", 95),
+                srv("dinero", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
+                // ── negocio — mi propia tienda: sitio, marketing y demos ─────
+                // Los demos son material de venta del negocio propio, no
+                // entregables de un cliente: por eso viven aquí y no en
+                // `clientes`.
+                ext("negocio", "javierr", "javierr.com", "portfolio + javibot",
+                    "https://javierr.com", "sun", 260),
+                tls("negocio", "marketing", "marketing", "calendario de posts", 8811, "megaphone", 340),
+                ext("negocio", "puertacaja", "PuertaCaja", "POS + puerta QR para eventos pop-up (demo)",
+                    "https://puertacaja-popup.jrckc23.workers.dev", "door", 28),
+                ext("negocio", "stay", "stay", "rental site (demo)",
+                    "https://stay.javierr.com", "house", 185),
+                ext("negocio", "abogados-demo", "abogados·demo", "IA para despachos · PIN 12345",
+                    "https://demo.javierr.com", "bot", 230),
+                // ── clientes — trabajo pagado, un tile por cliente ───────────
+                ext("clientes", "pablorubin", "pablorubin", "portfolio de pintor (cliente)",
+                    "https://pablorubin.com", "camera", 45),
+                ext("clientes", "oachb", "oachb", "archivo de obra · intake (cliente)",
+                    "https://oachb-panel.jrckc23.workers.dev", "camera", 90),
+                ext("clientes", "microcentro", "microcentro", "POS · inventario (cliente)",
+                    "https://microcentro-web.jrckc23.workers.dev", "kanban", 145),
+                ext("clientes", "roners", "roners", "planes de rodaje · bodega · radios",
+                    "https://roner.mx", "kanban", 200),
+                // ── contenido — producir video, foto y voz ───────────────────
+                tls("contenido", "estudio", "estudio", "brief de producción de video", 8798, "camera", 42),
+                ext("contenido", "rawcam", "rawcam", "clean camera + overlays",
+                    "https://rawcam.pages.dev", "camera", 12),
                 // grabadora en la mini (necesita el bridge de hermes + ffmpeg
                 // locales); loopback tras `tailscale serve` → HTTPS explícito
                 StoreApp {
@@ -240,42 +287,9 @@ impl Catalog {
                     host: Some("mac".to_owned()),
                     icon: "mic".to_owned(),
                     hue: 12,
-                    category: "life".to_owned(),
+                    category: "contenido".to_owned(),
                     private: false,
                 },
-                tls("life", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),
-                srv("life", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
-                ext("life", "paros", "paros", "eventos de escalada",
-                    "https://paros-web.jrckc23.workers.dev", "mountain", 100),
-                ext("life", "locals", "locals", "recomendaciones locales",
-                    "https://locals.jrckc23.workers.dev", "speech", 20),
-                // ── work — shipped products & client sites ───────────────────
-                ext("work", "javierr", "javierr.com", "portfolio + javibot",
-                    "https://javierr.com", "sun", 260),
-                ext("work", "roners", "roners", "planes de rodaje · bodega · radios",
-                    "https://roner.mx", "kanban", 200),
-                ext("work", "pablorubin", "pablorubin", "portfolio de pintor (cliente)",
-                    "https://pablorubin.com", "camera", 45),
-                ext("work", "oachb", "oachb", "archivo de obra · intake (cliente)",
-                    "https://oachb-panel.jrckc23.workers.dev", "camera", 90),
-                ext("work", "microcentro", "microcentro", "POS · inventario (cliente)",
-                    "https://microcentro-web.jrckc23.workers.dev", "kanban", 145),
-                ext("work", "puertacaja", "PuertaCaja", "POS + puerta QR para eventos pop-up (demo)",
-                    "https://puertacaja-popup.jrckc23.workers.dev", "door", 28),
-                ext("work", "stay", "stay", "rental site (demo)",
-                    "https://stay.javierr.com", "house", 185),
-                ext("work", "abogados-demo", "abogados·demo", "IA para despachos · PIN 12345",
-                    "https://demo.javierr.com", "bot", 230),
-                tls("work", "estudio", "estudio", "brief de producción de video", 8798, "camera", 42),
-                srv("work", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
-                srv("work", "crux-playground", "crux", "playground", 3012, "hold", 25),
-                srv("work", "iprep", "iprep", "interview prep", 3011, "cap", 210),
-                ext("work", "manos", "manos", "aprende LSM",
-                    "https://lds.javierr.com", "hand", 330),
-                ext("work", "rawcam", "rawcam", "clean camera + overlays",
-                    "https://rawcam.pages.dev", "camera", 12),
-                ext("work", "pinpad", "pinpad", "nota compartida con PIN",
-                    "https://pad.javierr.com", "app", 305),
                 // ── dev — remote-work tools (Mac mini over the tailnet) ──────
                 // ttyd is loopback-only behind `tailscale serve`, so its public
                 // tailnet endpoint is HTTPS. Plain HTTP on :7681 returns 400.
@@ -326,9 +340,38 @@ impl Catalog {
                     "https://caguair.triceratops-adelie.ts.net:8810", "hand", 205),
                 mac("dev", "opencode-web", "opencode", "web ui", 4096, "code", 175),
                 mac("dev", "ttyd-opencode", "oc·term", "opencode tty", 7682, "term", 85),
+                // pinpad: portapapeles compartido entre máquinas y teléfono —
+                // utilidad de trabajo, no un producto; por eso está aquí y no
+                // en `negocio` aunque viva en el dominio propio
+                ext("dev", "pinpad", "pinpad", "nota compartida con PIN",
+                    "https://pad.javierr.com", "app", 305),
+                // ── instalar — the download shelf ────────────────────────────
+                // Doctrine 2026-08-09: every installable app's download link
+                // lives in the store. These used to be scattered next to each
+                // app's web tile, which made "put this on a new phone" a
+                // scavenger hunt; they are one section now. OTA pages are
+                // `tailscale serve` path-serves rather than host ports, so
+                // `ext` is right — no LED to light. Near the bottom on purpose:
+                // it's the shelf you visit when setting up a device, not daily.
+                ext("instalar", "cagua-app", "cagua·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8807", "app", 42),
+                ext("instalar", "pulso-app", "pulso·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8803", "pulse", 350),
+                ext("instalar", "brujula-app", "brújula·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8812", "compass", 10),
+                ext("instalar", "crux-app", "crux·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8801", "hold", 25),
+                ext("instalar", "mapas-app", "mapas·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8802", "map", 130),
+                ext("instalar", "fotos-app", "fotos·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8804", "camera", 268),
+                ext("instalar", "paros-app", "paros·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
+                ext("instalar", "crust-app", "crust·app", "instalar PWA · compartir → añadir",
+                    "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
                 // ── infra — monitoring & plumbing ────────────────────────────
                 srv("infra", "uptime-kuma", "kuma", "uptime checks", 3001, "pulse", 130),
-                srv("infra", "ntfy", "ntfy", "push notifs", 8082, "bell", 320),
+                tls("infra", "ntfy", "ntfy", "push notifs", 8082, "bell", 320),
                 ext("infra", "tailscale", "tailscale", "tailnet admin",
                     "https://login.tailscale.com/admin/machines", "mesh", 200),
         ];
@@ -379,11 +422,129 @@ mod tests {
             app.url,
             "https://puertacaja-popup.jrckc23.workers.dev"
         );
-        assert_eq!(app.category, "work");
+        assert_eq!(app.category, "negocio");
         assert_eq!(app.icon, "door");
         assert_eq!(app.port, None);
         assert_eq!(app.host, None);
         assert!(!app.private);
+    }
+
+    /// The launcher derives a section's position from its **first** tile, so a
+    /// category whose tiles are split across the vec would render its stragglers
+    /// under the earlier header and silently lose the intended order.
+    #[test]
+    fn builtin_categories_are_contiguous_and_ordered() {
+        const ORDER: &[&str] = &[
+            "día", "cuerpo", "vida", "medios", "aprender", "dinero", "negocio", "clientes",
+            "contenido", "dev", "instalar", "infra",
+        ];
+        let cat = Catalog::builtin();
+        let mut seen: Vec<&str> = Vec::new();
+        for a in &cat.apps {
+            if seen.last() != Some(&a.category.as_str()) {
+                assert!(
+                    !seen.contains(&a.category.as_str()),
+                    "category {:?} is not contiguous in the catalog",
+                    a.category
+                );
+                seen.push(a.category.as_str());
+            }
+        }
+        assert_eq!(seen, ORDER, "section render order changed");
+    }
+
+    /// The three moves the owner asked for by name.
+    #[test]
+    fn owner_requested_placements() {
+        let cat = Catalog::builtin();
+        let cat_of = |slug: &str| {
+            cat.apps
+                .iter()
+                .find(|a| a.slug == slug)
+                .unwrap_or_else(|| panic!("{slug} missing from catalog"))
+                .category
+                .clone()
+        };
+        assert_eq!(cat_of("poker-helper"), "vida");
+        assert_eq!(cat_of("mapas"), "vida");
+        assert_eq!(cat_of("calendario"), "día");
+    }
+
+    /// Tiles behind `tailscale serve` must use `https://`. An `http://` URL to
+    /// an HTTPS listener returns a bare 400 and looks like a dead app — the bug
+    /// the owner hit on cuentas (2026-08-13). The two lists below are recorded
+    /// probe results (`curl -sk -w '%{http_code}'` against both schemes); a
+    /// service that changes sides must be re-probed, not guessed.
+    #[test]
+    fn tailscale_serve_tiles_are_https() {
+        // https → real response, http → 400. Behind `tailscale serve`.
+        const HTTPS: &[&str] = &[
+            "cuentas",
+            "vuelos",
+            "depas",
+            "crag-finder",
+            "poker-helper",
+            "crux-playground",
+            "iprep",
+            "ntfy",
+            "gastos",
+            "brief",
+            "calendario",
+            "hermeshub",
+            "vitals",
+            "mapas",
+            "comida",
+            "genealogy",
+            "musica",
+            "feishin",
+            "fotos",
+            "dilo",
+            "marketing",
+            "estudio",
+        ];
+        // https → connection refused: these have no TLS listener at all and
+        // MUST stay plain HTTP.
+        const PLAIN: &[&str] = &["command-center", "polybot", "portfolio", "uptime-kuma"];
+
+        let cat = Catalog::builtin();
+        let url = |slug: &str| {
+            cat.apps
+                .iter()
+                .find(|a| a.slug == slug)
+                .unwrap_or_else(|| panic!("{slug} missing from catalog"))
+                .url
+                .clone()
+        };
+        for slug in HTTPS {
+            assert!(
+                url(slug).starts_with("https://"),
+                "{slug} is behind tailscale serve — an http:// URL yields a 400"
+            );
+        }
+        for slug in PLAIN {
+            assert!(
+                url(slug).starts_with("http://"),
+                "{slug} has no HTTPS listener — https:// would refuse the connection"
+            );
+        }
+    }
+
+    /// No section may grow back into a junk drawer, and no tile may be left
+    /// alone under a header of its own.
+    #[test]
+    fn builtin_sections_are_reasonably_sized() {
+        let cat = Catalog::builtin();
+        let mut counts: Vec<(&str, usize)> = Vec::new();
+        for a in &cat.apps {
+            match counts.iter_mut().find(|(c, _)| *c == a.category) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((a.category.as_str(), 1)),
+            }
+        }
+        for (c, n) in counts {
+            assert!(n >= 2, "section {c:?} has a single lonely tile");
+            assert!(n < 15, "section {c:?} has {n} tiles — junk drawer");
+        }
     }
 
     #[test]

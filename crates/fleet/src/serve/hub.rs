@@ -7,6 +7,7 @@
 //!
 //! Policy:
 //! - `/hub/cc/{*rest}`      → `{cc_url}/api/{rest}`      — GET, POST, DELETE
+//! - `/hub/today/{*rest}`   → `{cc_url}/api/{rest}`      — *path*-whitelisted
 //! - `/hub/cuentas/{*rest}` → `{cuentas_url}/api/{rest}` — GET only
 //! - `/hub/hermes/{*rest}`  → `{hermeshub_url}/api/{rest}` — GET only
 //!
@@ -116,6 +117,93 @@ pub async fn hub_cc(
         &[Method::GET, Method::POST, Method::DELETE],
         method,
         &rest,
+        query,
+        body,
+    )
+    .await
+}
+
+// ── /hub/today — the narrow Command Center surface ────────────────────────────
+//
+// `/hub/cc/*` is the *browser* board's proxy: whatever the kanban needs, which
+// is effectively the whole task API. The native cagua app and its widgets need
+// exactly two calls, and they run on a phone that is off the tailnet half the
+// time, so they get their own door with a **path** whitelist instead of only a
+// method one. That is what lets the app talk HTTPS through fleet-serve and
+// carry no ATS exception for the plain-HTTP Command Center on :8787.
+
+/// The only task statuses the narrow proxy will forward. Anything else is a
+/// vocabulary the app does not have, so it is somebody probing the door.
+const TODAY_STATUSES: [&str; 3] = ["backlog", "in_progress", "done"];
+
+/// `tasks/{id}` with a numeric id — the single patchable path.
+fn is_task_id_path(rest: &str) -> bool {
+    match rest.strip_prefix("tasks/") {
+        Some(id) => !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()),
+        None => false,
+    }
+}
+
+/// The one body shape allowed through: `{"status": "<known status>"}` and
+/// nothing else. Title edits, priority changes and deletes stay on `/hub/cc`,
+/// behind the browser, where a human is looking at what they are doing.
+fn is_status_patch(body: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return false;
+    };
+    let Some(obj) = value.as_object() else {
+        return false;
+    };
+    obj.len() == 1
+        && obj
+            .get("status")
+            .and_then(|s| s.as_str())
+            .is_some_and(|s| TODAY_STATUSES.contains(&s))
+}
+
+/// `/hub/today/{*rest}` — Command Center, path-whitelisted for the native app:
+///
+/// - `GET  tasks[?query]`   → the board (the `today` ranking runs client-side)
+/// - `POST tasks/{id}`      → `{"status": "..."}` only
+///
+/// Anything else is a 404 (path not proxied) or a 405 (wrong method for a
+/// proxied path); a POST whose body is not a bare status patch is a 400.
+pub async fn hub_today(
+    State(state): State<AppState>,
+    method: Method,
+    Path(rest): Path<String>,
+    RawQuery(query): RawQuery,
+    body: Bytes,
+) -> Response {
+    let rest = rest.trim_end_matches('/');
+
+    if rest == "tasks" {
+        if method != Method::GET {
+            return json_error(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
+        }
+    } else if is_task_id_path(rest) {
+        if method != Method::POST {
+            return json_error(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
+        }
+        if !is_status_patch(&body) {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                "only a bare {\"status\": ...} patch is proxied here",
+            );
+        }
+    } else {
+        return json_error(StatusCode::NOT_FOUND, "path not proxied");
+    }
+
+    let base = state.cc_url.clone();
+    proxy(
+        &state,
+        &base,
+        None,
+        None,
+        &[Method::GET, Method::POST],
+        method,
+        rest,
         query,
         body,
     )

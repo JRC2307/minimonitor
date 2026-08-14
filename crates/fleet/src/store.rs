@@ -99,7 +99,7 @@ impl Catalog {
     /// The built-in catalog: the caguaserver apps plus the remote-work tools
     /// on the Mac mini, all reachable over the tailnet. Grouped into launcher
     /// sections via `category` — sections render in catalog order:
-    /// daily · money · life · work · dev · infra.
+    /// daily · instalar · money · life · work · dev · infra.
     pub fn builtin() -> Catalog {
         const SERVER: &str = "http://caguaserver.triceratops-adelie.ts.net";
         const MAC: &str = "http://caguamini.triceratops-adelie.ts.net";
@@ -186,11 +186,23 @@ impl Catalog {
                 tls("daily", "hermeshub", "hermes", "chat + command center", 8796, "speech", 275),
                 srv("daily", "command-center", "backlog", "command center", 8787, "kanban", 265),
                 tls("daily", "vitals", "vitals", "whoop health tracker", 3016, "pulse", 350),
-                // Install links (doctrine 2026-08-09: every installable app's
-                // download link lives in the store). OTA pages are tailscale
-                // path-serves, not host ports — ext = no LED, correctly.
-                ext("daily", "pulso-app", "pulso·app", "instalar en iPhone",
+                // ── instalar — the download shelf ────────────────────────────
+                // Doctrine 2026-08-09: every installable app's download link
+                // lives in the store. These used to be scattered next to each
+                // app's web tile, which made "put this on a new phone" a
+                // scavenger hunt; they are one section now. OTA pages are
+                // `tailscale serve` path-serves rather than host ports, so
+                // `ext` is right — no LED to light.
+                ext("instalar", "pulso-app", "pulso·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8803", "pulse", 350),
+                ext("instalar", "crux-app", "crux·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8801", "hold", 25),
+                ext("instalar", "mapas-app", "mapas·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8802", "map", 130),
+                ext("instalar", "fotos-app", "fotos·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8804", "camera", 268),
+                ext("instalar", "paros-app", "paros·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
                 // ── money — the private drawer (PIN-locked below) ────────────
                 srv("money", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
                 tls("money", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
@@ -204,8 +216,6 @@ impl Catalog {
                 tls("life", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
                 tls("life", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
                 tls("life", "mapas", "mapas", "mis lugares · sin google", 8799, "map", 130),
-                ext("life", "mapas-app", "mapas·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8802", "map", 130),
                 tls("life", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
                 // grabadora en la mini (necesita el bridge de hermes + ffmpeg
                 // locales); loopback tras `tailscale serve` → HTTPS explícito
@@ -221,14 +231,10 @@ impl Catalog {
                     category: "life".to_owned(),
                     private: false,
                 },
-                ext("life", "fotos-app", "fotos·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8804", "camera", 268),
                 tls("life", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),
                 srv("life", "crag-finder", "crag", "find climbing", 3014, "mountain", 150),
                 ext("life", "paros", "paros", "eventos de escalada",
                     "https://paros-web.jrckc23.workers.dev", "mountain", 100),
-                ext("life", "paros-app", "paros·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
                 ext("life", "locals", "locals", "recomendaciones locales",
                     "https://locals.jrckc23.workers.dev", "speech", 20),
                 // ── work — shipped products & client sites ───────────────────
@@ -251,8 +257,6 @@ impl Catalog {
                 tls("work", "estudio", "estudio", "brief de producción de video", 8798, "camera", 42),
                 srv("work", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
                 srv("work", "crux-playground", "crux", "playground", 3012, "hold", 25),
-                ext("work", "crux-app", "crux·app", "instalar en iPhone",
-                    "https://caguaserver.triceratops-adelie.ts.net:8801", "hold", 25),
                 srv("work", "iprep", "iprep", "interview prep", 3011, "cap", 210),
                 ext("work", "manos", "manos", "aprende LSM",
                     "https://lds.javierr.com", "hand", 330),
@@ -300,6 +304,20 @@ impl Catalog {
                     host: Some("mac".to_owned()),
                     icon: "bot".to_owned(),
                     hue: 260,
+                    category: "dev".to_owned(),
+                    private: false,
+                },
+                // trackpad: el teléfono mueve el cursor de la mini — corre EN la
+                // mini por naturaleza; loopback tras `tailscale serve` → HTTPS
+                StoreApp {
+                    slug: "tacto".to_owned(),
+                    name: "tacto".to_owned(),
+                    tagline: "el teléfono como trackpad".to_owned(),
+                    url: "https://caguamini.triceratops-adelie.ts.net:8810".to_owned(),
+                    port: Some(8810),
+                    host: Some("mac".to_owned()),
+                    icon: "hand".to_owned(),
+                    hue: 205,
                     category: "dev".to_owned(),
                     private: false,
                 },

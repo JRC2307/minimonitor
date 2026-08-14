@@ -183,6 +183,7 @@ impl Catalog {
                 // ── daily — opened every day ─────────────────────────────────
                 tls("daily", "brief", "brief", "panel del día", 8092, "sun", 15),
                 tls("daily", "calendario", "calendario", "agenda self-hosted", 8791, "calendar", 38),
+                tls("daily", "marketing", "marketing", "calendario de posts", 8811, "megaphone", 340),
                 tls("daily", "hermeshub", "hermes", "chat + command center", 8796, "speech", 275),
                 srv("daily", "command-center", "backlog", "command center", 8787, "kanban", 265),
                 tls("daily", "vitals", "vitals", "whoop health tracker", 3016, "pulse", 350),

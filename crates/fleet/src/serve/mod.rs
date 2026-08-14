@@ -120,6 +120,10 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         // `/hub/*` proxy to sibling loopback services (method policy enforced
         // inside the handlers; disallowed methods get a JSON 405).
         .route("/hub/cc/{*rest}", any(hub::hub_cc))
+        // Same upstream as `/hub/cc`, path-whitelisted: the native cagua app
+        // and its widgets read the board and check tasks off through this door
+        // so they never need a plain-HTTP ATS hole for :8787.
+        .route("/hub/today/{*rest}", any(hub::hub_today))
         .route("/hub/cuentas/{*rest}", any(hub::hub_cuentas))
         .route("/hub/hermes/{*rest}", any(hub::hub_hermes))
         .route("/hub/vitals/{*rest}", any(hub::hub_vitals))
@@ -1612,6 +1616,12 @@ mod tests {
                 get(|| async { axum::Json(serde_json::json!({"ok": true, "kind": "summary"})) }),
             )
             .route(
+                "/api/tasks",
+                get(|axum::extract::RawQuery(q): axum::extract::RawQuery| async move {
+                    axum::Json(serde_json::json!({"kind": "tasks", "query": q}))
+                }),
+            )
+            .route(
                 "/api/tasks/{id}",
                 post(|body: String| async move {
                     axum::Json(serde_json::json!({"patched": true, "body": body}))
@@ -1679,6 +1689,91 @@ mod tests {
         let router = hub_router(f.path().to_path_buf(), "http://127.0.0.1:1");
         let (status, _) = oneshot_method(router, "PUT", "/hub/cc/tasks/42", "{}").await;
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    // ── /hub/today — the narrow board door the native app uses ───────────────
+
+    #[tokio::test]
+    async fn hub_today_get_tasks_proxies_with_query() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, body) = oneshot_get(router, "/hub/today/tasks?project_id=all").await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["kind"], "tasks");
+        assert_eq!(
+            v["query"], "project_id=all",
+            "the query string must reach the Command Center: {v}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hub_today_post_status_patch_proxies() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, body) =
+            oneshot_method(router, "POST", "/hub/today/tasks/42", r#"{"status":"done"}"#).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["patched"], true);
+        assert!(v["body"].as_str().unwrap().contains("done"));
+    }
+
+    /// The whole point of the second door: everything that is not those two
+    /// calls stops here rather than reaching the Command Center.
+    #[tokio::test]
+    async fn hub_today_refuses_everything_else() {
+        let f = seed_db(&[]);
+        // Upstream is a dead port: anything that answers did NOT get proxied.
+        let router = hub_router(f.path().to_path_buf(), "http://127.0.0.1:1");
+
+        // Paths outside the whitelist — 404, whatever the method.
+        for path in ["/hub/today/summary", "/hub/today/projects", "/hub/today/next"] {
+            let (status, _) = oneshot_get(router.clone(), path).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{path} must not be proxied");
+        }
+        // A non-numeric task id is not a task id.
+        let (status, _) =
+            oneshot_method(router.clone(), "POST", "/hub/today/tasks/all", r#"{"status":"done"}"#)
+                .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // Right paths, wrong methods.
+        let (status, _) = oneshot_method(router.clone(), "POST", "/hub/today/tasks", "{}").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        let (status, _) = oneshot_get(router.clone(), "/hub/today/tasks/42").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        let (status, _) = oneshot_method(router.clone(), "DELETE", "/hub/today/tasks/42", "").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+
+        // Right path and method, body that is more than a status patch.
+        for body in [
+            r#"{"status":"done","title":"pwned"}"#,
+            r#"{"title":"pwned"}"#,
+            r#"{"status":"deleted"}"#,
+            r#"{}"#,
+            "not json",
+        ] {
+            let (status, _) =
+                oneshot_method(router.clone(), "POST", "/hub/today/tasks/42", body).await;
+            assert_eq!(
+                status,
+                StatusCode::BAD_REQUEST,
+                "body {body:?} must be refused"
+            );
+        }
     }
 
     #[tokio::test]

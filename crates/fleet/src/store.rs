@@ -194,8 +194,12 @@ impl Catalog {
                 // scavenger hunt; they are one section now. OTA pages are
                 // `tailscale serve` path-serves rather than host ports, so
                 // `ext` is right — no LED to light.
+                ext("instalar", "cagua-app", "cagua·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8807", "app", 42),
                 ext("instalar", "pulso-app", "pulso·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8803", "pulse", 350),
+                ext("instalar", "brujula-app", "brújula·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8812", "compass", 10),
                 ext("instalar", "crux-app", "crux·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8801", "hold", 25),
                 ext("instalar", "mapas-app", "mapas·app", "instalar en iPhone",
@@ -204,6 +208,8 @@ impl Catalog {
                     "https://caguaserver.triceratops-adelie.ts.net:8804", "camera", 268),
                 ext("instalar", "paros-app", "paros·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
+                ext("instalar", "crust-app", "crust·app", "instalar PWA · compartir → añadir",
+                    "https://caguaserver.triceratops-adelie.ts.net:8812", "strata", 18),
                 // ── money — the private drawer (PIN-locked below) ────────────
                 srv("money", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
                 tls("money", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
@@ -218,6 +224,11 @@ impl Catalog {
                 tls("life", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
                 tls("life", "mapas", "mapas", "mis lugares · sin google", 8799, "map", 130),
                 tls("life", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
+                // atlas geológico: `tailscale serve` sirve el directorio, no hay
+                // proceso escuchando → `ext`, sin LED. Es PWA y se instala desde
+                // la misma URL, por eso también está en la repisa de instalar.
+                ext("life", "crust", "crust", "placas · sismos · rocas",
+                    "https://caguaserver.triceratops-adelie.ts.net:8812", "strata", 18),
                 // grabadora en la mini (necesita el bridge de hermes + ffmpeg
                 // locales); loopback tras `tailscale serve` → HTTPS explícito
                 StoreApp {

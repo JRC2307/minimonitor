@@ -1629,6 +1629,21 @@ mod tests {
                     axum::Json(serde_json::json!({"kind": "tasks", "query": q}))
                 }),
             )
+            // Literal `tasks/<word>` paths first: axum prefers a static segment
+            // over `{id}`, so these must exist to prove the proxy sent them to
+            // the right upstream endpoint and not to the status-patch one.
+            .route(
+                "/api/tasks/recent-done",
+                get(|axum::extract::RawQuery(q): axum::extract::RawQuery| async move {
+                    axum::Json(serde_json::json!({"kind": "recent-done", "query": q}))
+                }),
+            )
+            .route(
+                "/api/tasks/reorder",
+                post(|body: String| async move {
+                    axum::Json(serde_json::json!({"reordered": true, "body": body}))
+                }),
+            )
             .route(
                 "/api/tasks/{id}",
                 post(|body: String| async move {
@@ -1790,7 +1805,132 @@ mod tests {
         }
     }
 
-    /// The whole point of the second door: everything that is not those four
+    /// The phone must be able to reverse an accidental completion, so `backlog`
+    /// (and `in_progress`) are as proxyable as `done`.
+    #[tokio::test]
+    async fn hub_today_post_status_patch_accepts_backlog_and_in_progress() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        for status_value in ["backlog", "in_progress", "done"] {
+            let router = hub_router(f.path().to_path_buf(), &base);
+            let body = format!(r#"{{"status":"{status_value}"}}"#);
+            let (status, out) = oneshot_method(router, "POST", "/hub/today/tasks/42", &body).await;
+            assert_eq!(
+                status,
+                StatusCode::OK,
+                "status {status_value:?} must be proxied: {}",
+                String::from_utf8_lossy(&out)
+            );
+            let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            assert_eq!(v["patched"], true);
+            assert!(
+                v["body"].as_str().unwrap().contains(status_value),
+                "the patch body must reach the Command Center intact: {v}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn hub_today_get_recent_done_proxies_with_query() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, body) = oneshot_get(router, "/hub/today/tasks/recent-done?limit=3").await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["kind"], "recent-done");
+        assert_eq!(
+            v["query"], "limit=3",
+            "the query string must reach the Command Center: {v}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hub_today_post_reorder_proxies() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, body) = oneshot_method(
+            router,
+            "POST",
+            "/hub/today/tasks/reorder",
+            r#"{"project_id":15,"ordered_ids":[3,1,2]}"#,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            v["reordered"], true,
+            "must hit /api/tasks/reorder, not the status-patch endpoint: {v}"
+        );
+        assert!(v["body"].as_str().unwrap().contains("ordered_ids"));
+    }
+
+    /// The routing subtlety worth a test of its own: `reorder` sits exactly where
+    /// a task id would, and must never be handled by the `tasks/{id}` status-patch
+    /// branch. A status body on the reorder path is a 400, not a patch on a task
+    /// called "reorder" — and the reorder body would be a 400 on the patch door.
+    #[tokio::test]
+    async fn hub_today_reorder_is_not_a_task_id() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+
+        // A status patch aimed at the reorder path is refused by the reorder
+        // validator; it must NOT reach the upstream patch endpoint.
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, out) = oneshot_method(
+            router,
+            "POST",
+            "/hub/today/tasks/reorder",
+            r#"{"status":"done"}"#,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "reorder must not be treated as a status patch on a task named \"reorder\": {}",
+            String::from_utf8_lossy(&out)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert!(
+            v.get("patched").is_none(),
+            "the request must never have reached the patch endpoint: {v}"
+        );
+
+        // Symmetrically, a reorder body on a numeric task id is not a status patch.
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, _) = oneshot_method(
+            router,
+            "POST",
+            "/hub/today/tasks/42",
+            r#"{"project_id":15,"ordered_ids":[3,1,2]}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // And `recent-done` is likewise a read, not an id: a POST is a 405.
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, _) = oneshot_method(
+            router,
+            "POST",
+            "/hub/today/tasks/recent-done",
+            r#"{"status":"done"}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    /// The whole point of the second door: everything that is not those six
     /// calls stops here rather than reaching the Command Center.
     #[tokio::test]
     async fn hub_today_refuses_everything_else() {
@@ -1808,6 +1948,13 @@ mod tests {
             "/hub/today/tasks/all/punt",
             "/hub/today/tasks//punt",
             "/hub/today/punt",
+            // Siblings of the two new literal paths.
+            "/hub/today/tasks/recent-done/extra",
+            "/hub/today/tasks/recent",
+            "/hub/today/recent-done",
+            "/hub/today/tasks/reorder/extra",
+            "/hub/today/reorder",
+            "/hub/today/tasks/reorder-all",
         ] {
             let (status, _) = oneshot_get(router.clone(), path).await;
             assert_eq!(status, StatusCode::NOT_FOUND, "{path} must not be proxied");
@@ -1864,6 +2011,41 @@ mod tests {
                 status,
                 StatusCode::BAD_REQUEST,
                 "body {body:?} must be refused"
+            );
+        }
+
+        // recent-done is read-only; reorder is write-only.
+        let (status, _) =
+            oneshot_method(router.clone(), "DELETE", "/hub/today/tasks/recent-done", "").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        let (status, _) = oneshot_get(router.clone(), "/hub/today/tasks/reorder").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        let (status, _) =
+            oneshot_method(router.clone(), "DELETE", "/hub/today/tasks/reorder", "").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+
+        // A reorder body must be exactly the two-key shape, ints only, non-empty.
+        for body in [
+            "",                                             // no body at all
+            "{}",                                           // both keys missing
+            r#"{"project_id":15}"#,                         // ordered_ids missing
+            r#"{"ordered_ids":[1,2]}"#,                     // project_id missing
+            r#"{"project_id":15,"ordered_ids":[]}"#,        // empty list
+            r#"{"project_id":15,"ordered_ids":[1],"x":1}"#, // extra key
+            r#"{"project_id":"15","ordered_ids":[1]}"#,     // string project_id
+            r#"{"project_id":15,"ordered_ids":["1"]}"#,     // string ids
+            r#"{"project_id":15,"ordered_ids":[1,null]}"#,  // null in the list
+            r#"{"project_id":1.5,"ordered_ids":[1]}"#,      // float project_id
+            r#"{"project_id":15,"ordered_ids":{"a":1}}"#,   // ordered_ids not a list
+            r#"[{"project_id":15,"ordered_ids":[1]}]"#,     // not an object
+            "not json",
+        ] {
+            let (status, _) =
+                oneshot_method(router.clone(), "POST", "/hub/today/tasks/reorder", body).await;
+            assert_eq!(
+                status,
+                StatusCode::BAD_REQUEST,
+                "reorder body {body:?} must be refused"
             );
         }
     }

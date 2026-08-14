@@ -64,6 +64,9 @@ pub struct AppState {
     /// Home-screen ticker watchlist (`SYMBOL` or `SYMBOL:label`), served
     /// ungated by `/api/tickers` — public prices carry no holding sizes.
     pub tickers: std::sync::Arc<Vec<String>>,
+    /// Obsidian vault root searched by `/api/search` (`[serve] vault_path`).
+    /// A path that does not exist yields an empty vault group, not an error.
+    pub vault_path: PathBuf,
 }
 
 // ── format helpers ────────────────────────────────────────────────────────────
@@ -270,7 +273,7 @@ fn inventory_rows(
 
 /// Glyph keys present in the `store.html` sprite. A catalog entry with any
 /// other `icon` value renders the generic `app` glyph instead of a broken ref.
-const STORE_ICONS: &[&str] = &[
+pub(crate) const STORE_ICONS: &[&str] = &[
     "spade", "mountain", "hold", "cap", "kanban", "coin", "pulse", "gauge", "bell", "app", "term",
     "code", "mesh", "calendar", "plane", "chart", "bot", "sun", "hand", "door", "speech", "house",
     "camera", "map", "music", "bowl", "mic", "megaphone", "compass", "strata",

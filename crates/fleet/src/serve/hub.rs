@@ -144,6 +144,32 @@ fn is_task_id_path(rest: &str) -> bool {
     }
 }
 
+/// `tasks/{id}/punt` with a numeric id — the one *reordering* write. It carries
+/// no payload of its own (the server derives the new position), so unlike the
+/// status patch there is nothing in the body to whitelist; there just must not
+/// be anything in it.
+fn is_task_punt_path(rest: &str) -> bool {
+    match rest
+        .strip_prefix("tasks/")
+        .and_then(|s| s.strip_suffix("/punt"))
+    {
+        Some(id) => !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()),
+        None => false,
+    }
+}
+
+/// A punt body must be absent or an empty JSON object. Anything with fields in
+/// it is somebody trying to smuggle a patch through the reordering door.
+fn is_empty_body(body: &[u8]) -> bool {
+    if body.iter().all(u8::is_ascii_whitespace) {
+        return true;
+    }
+    serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.as_object().map(|o| o.is_empty()))
+        .unwrap_or(false)
+}
+
 /// The one body shape allowed through: `{"status": "<known status>"}` and
 /// nothing else. Title edits, priority changes and deletes stay on `/hub/cc`,
 /// behind the browser, where a human is looking at what they are doing.
@@ -163,11 +189,14 @@ fn is_status_patch(body: &[u8]) -> bool {
 
 /// `/hub/today/{*rest}` — Command Center, path-whitelisted for the native app:
 ///
-/// - `GET  tasks[?query]`   → the board (the `today` ranking runs client-side)
-/// - `POST tasks/{id}`      → `{"status": "..."}` only
+/// - `GET  tasks[?query]`      → the board (the `today` ranking runs client-side)
+/// - `GET  fronts[?query]`     → the per-project front view, ranked server-side
+/// - `POST tasks/{id}`         → `{"status": "..."}` only
+/// - `POST tasks/{id}/punt`    → empty body; sends a task down its own queue
 ///
 /// Anything else is a 404 (path not proxied) or a 405 (wrong method for a
-/// proxied path); a POST whose body is not a bare status patch is a 400.
+/// proxied path); a POST whose body is not a bare status patch (or, for a punt,
+/// not empty) is a 400.
 pub async fn hub_today(
     State(state): State<AppState>,
     method: Method,
@@ -177,9 +206,19 @@ pub async fn hub_today(
 ) -> Response {
     let rest = rest.trim_end_matches('/');
 
-    if rest == "tasks" {
+    if rest == "tasks" || rest == "fronts" {
         if method != Method::GET {
             return json_error(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
+        }
+    } else if is_task_punt_path(rest) {
+        if method != Method::POST {
+            return json_error(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
+        }
+        if !is_empty_body(&body) {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                "punt takes no body — use POST tasks/{id} to change a task",
+            );
         }
     } else if is_task_id_path(rest) {
         if method != Method::POST {

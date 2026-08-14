@@ -1636,6 +1636,18 @@ mod tests {
                 }),
             )
             .route(
+                "/api/fronts",
+                get(|axum::extract::RawQuery(q): axum::extract::RawQuery| async move {
+                    axum::Json(serde_json::json!({"kind": "fronts", "query": q}))
+                }),
+            )
+            .route(
+                "/api/tasks/{id}/punt",
+                post(|body: String| async move {
+                    axum::Json(serde_json::json!({"punted": true, "body": body}))
+                }),
+            )
+            .route(
                 "/api/auth-echo",
                 get(|headers: axum::http::HeaderMap| async move {
                     let auth = headers
@@ -1739,7 +1751,46 @@ mod tests {
         assert!(v["body"].as_str().unwrap().contains("done"));
     }
 
-    /// The whole point of the second door: everything that is not those two
+    #[tokio::test]
+    async fn hub_today_get_fronts_proxies_with_query() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        let router = hub_router(f.path().to_path_buf(), &base);
+        let (status, body) = oneshot_get(router, "/hub/today/fronts?limit=5").await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["kind"], "fronts");
+        assert_eq!(
+            v["query"], "limit=5",
+            "the query string must reach the Command Center: {v}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hub_today_punt_proxies_with_empty_or_bare_body() {
+        let base = spawn_stub_upstream().await;
+        let f = seed_db(&[]);
+        for body in ["", "{}", "  "] {
+            let router = hub_router(f.path().to_path_buf(), &base);
+            let (status, out) =
+                oneshot_method(router, "POST", "/hub/today/tasks/42/punt", body).await;
+            assert_eq!(
+                status,
+                StatusCode::OK,
+                "body {body:?} must be proxied: {}",
+                String::from_utf8_lossy(&out)
+            );
+            let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            assert_eq!(v["punted"], true);
+        }
+    }
+
+    /// The whole point of the second door: everything that is not those four
     /// calls stops here rather than reaching the Command Center.
     #[tokio::test]
     async fn hub_today_refuses_everything_else() {
@@ -1748,7 +1799,16 @@ mod tests {
         let router = hub_router(f.path().to_path_buf(), "http://127.0.0.1:1");
 
         // Paths outside the whitelist — 404, whatever the method.
-        for path in ["/hub/today/summary", "/hub/today/projects", "/hub/today/next"] {
+        for path in [
+            "/hub/today/summary",
+            "/hub/today/projects",
+            "/hub/today/next",
+            "/hub/today/fronts/1",
+            "/hub/today/tasks/42/punt/extra",
+            "/hub/today/tasks/all/punt",
+            "/hub/today/tasks//punt",
+            "/hub/today/punt",
+        ] {
             let (status, _) = oneshot_get(router.clone(), path).await;
             assert_eq!(status, StatusCode::NOT_FOUND, "{path} must not be proxied");
         }
@@ -1761,10 +1821,34 @@ mod tests {
         // Right paths, wrong methods.
         let (status, _) = oneshot_method(router.clone(), "POST", "/hub/today/tasks", "{}").await;
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        let (status, _) = oneshot_method(router.clone(), "POST", "/hub/today/fronts", "{}").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
         let (status, _) = oneshot_get(router.clone(), "/hub/today/tasks/42").await;
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
         let (status, _) = oneshot_method(router.clone(), "DELETE", "/hub/today/tasks/42", "").await;
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        let (status, _) = oneshot_get(router.clone(), "/hub/today/tasks/42/punt").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        let (status, _) =
+            oneshot_method(router.clone(), "DELETE", "/hub/today/tasks/42/punt", "").await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+
+        // A punt carries no payload: a body with fields in it is a smuggled patch.
+        for body in [
+            r#"{"status":"done"}"#,
+            r#"{"title":"pwned"}"#,
+            r#"{"sort_order":0}"#,
+            "[]",
+            "not json",
+        ] {
+            let (status, _) =
+                oneshot_method(router.clone(), "POST", "/hub/today/tasks/42/punt", body).await;
+            assert_eq!(
+                status,
+                StatusCode::BAD_REQUEST,
+                "punt body {body:?} must be refused"
+            );
+        }
 
         // Right path and method, body that is more than a status patch.
         for body in [

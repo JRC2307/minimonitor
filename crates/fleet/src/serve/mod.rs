@@ -125,6 +125,9 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/hub/vitals/{*rest}", any(hub::hub_vitals))
         .route("/hub/polybot/{*rest}", any(hub::hub_polybot))
         .route("/hub/portfolio/{*rest}", any(hub::hub_portfolio))
+        // The launcher catalog as JSON — same `AppState` catalog the HTML
+        // launcher renders, for the native store client.
+        .route("/api/store", get(routes::get_store_json))
         .route("/api/news", get(routes::get_news))
         .route("/api/rss", get(routes::get_rss))
         .route("/api/quotes", get(routes::get_quotes))
@@ -1955,6 +1958,62 @@ mod tests {
         assert!(
             html.contains("python3.1"),
             "raw process should still render:\n{html}"
+        );
+    }
+
+    // ── /api/store mirrors the launcher catalog ──────────────────────────────
+
+    #[tokio::test]
+    async fn api_store_lists_every_builtin_app() {
+        let f = seed_db(&[make_node("fleet-store", "store-host")]);
+
+        let router = build_router(f.path().to_path_buf());
+        let (status, body) = oneshot_get(router, "/api/store").await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "body: {}",
+            String::from_utf8_lossy(&body)
+        );
+
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
+        let apps = v["apps"].as_array().expect("apps must be an array");
+        let slugs: Vec<&str> = apps.iter().filter_map(|a| a["slug"].as_str()).collect();
+
+        // Every built-in tile must be reachable from the native client.
+        let catalog = crate::store::Catalog::builtin();
+        assert_eq!(apps.len(), catalog.apps.len(), "app count must match catalog");
+        for app in &catalog.apps {
+            assert!(
+                slugs.contains(&app.slug.as_str()),
+                "missing catalog slug: {} — /api/store drifted from the launcher",
+                app.slug
+            );
+        }
+
+        // Per-app keys the client decodes.
+        let first = &apps[0];
+        for key in &[
+            "slug",
+            "name",
+            "tagline",
+            "description",
+            "url",
+            "port",
+            "host",
+            "icon",
+            "hue",
+            "category",
+            "private",
+        ] {
+            assert!(first.get(*key).is_some(), "missing app key: {key}");
+        }
+
+        let sections = v["sections"].as_array().expect("sections must be an array");
+        assert!(!sections.is_empty(), "sections must not be empty");
+        assert!(
+            sections.iter().all(|s| s.is_string()),
+            "sections must be strings: {sections:?}"
         );
     }
 }

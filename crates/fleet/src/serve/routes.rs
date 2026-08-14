@@ -273,7 +273,7 @@ fn inventory_rows(
 const STORE_ICONS: &[&str] = &[
     "spade", "mountain", "hold", "cap", "kanban", "coin", "pulse", "gauge", "bell", "app", "term",
     "code", "mesh", "calendar", "plane", "chart", "bot", "sun", "hand", "door", "speech", "house",
-    "camera", "map", "music", "bowl", "mic",
+    "camera", "map", "music", "bowl", "mic", "megaphone",
 ];
 
 /// The launcher home screen. Liveness LED per app: its catalog `port` appears
@@ -338,6 +338,61 @@ pub async fn get_store(State(state): State<AppState>) -> Response {
         up_count,
         led_count,
     })
+}
+
+// ── GET /api/store (catalog as JSON for the native clients) ──────────────────
+
+/// `GET /api/store` — the same catalog the HTML launcher renders, as JSON for
+/// the native iOS store client. Reads `state.store` (built-in default or the
+/// `store.toml` override), so the two views can never drift apart.
+///
+/// `{apps: [{slug, name, tagline, description, url, port, host, icon, hue,
+/// category, private}], sections: [category, …]}`. `icon` is normalized the
+/// same way the launcher normalizes it — an unknown glyph key comes back as
+/// `app` — so a client can map it straight onto its own sprite. `description`
+/// is an alias of `tagline` (same text) for clients that prefer that name.
+/// `url` is the full user-facing URL, HTTPS included for the `tailscale serve`
+/// apps, so a tile opens exactly where the launcher's link goes. `sections`
+/// lists the distinct categories in catalog order, matching the launcher's
+/// section order. Ungated, like `/` itself: private tiles are flagged, not
+/// withheld (the money PIN gates the `/hub/*` proxy, not the catalog).
+pub async fn get_store_json(State(state): State<AppState>) -> Response {
+    let apps: Vec<serde_json::Value> = state
+        .store
+        .apps
+        .iter()
+        .map(|a| {
+            let icon = if STORE_ICONS.contains(&a.icon.as_str()) {
+                a.icon.as_str()
+            } else {
+                "app"
+            };
+            serde_json::json!({
+                "slug": a.slug,
+                "name": a.name,
+                "tagline": a.tagline,
+                "description": a.tagline,
+                "url": a.url,
+                "port": a.port,
+                "host": a.host,
+                "icon": icon,
+                "hue": a.hue,
+                "category": a.category,
+                "private": a.private,
+            })
+        })
+        .collect();
+
+    // Distinct categories, catalog order (first tile of a category fixes it).
+    let mut sections: Vec<&str> = Vec::new();
+    for a in state.store.apps.iter() {
+        if !sections.contains(&a.category.as_str()) {
+            sections.push(a.category.as_str());
+        }
+    }
+
+    let body = serde_json::json!({ "apps": apps, "sections": sections }).to_string();
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], body).into_response()
 }
 
 // ── GET /api/news (breaking headlines for the launcher's news widget) ────────

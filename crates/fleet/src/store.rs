@@ -307,20 +307,11 @@ impl Catalog {
                     category: "dev".to_owned(),
                     private: false,
                 },
-                // trackpad: el teléfono mueve el cursor de la mini — corre EN la
-                // mini por naturaleza; loopback tras `tailscale serve` → HTTPS
-                StoreApp {
-                    slug: "tacto".to_owned(),
-                    name: "tacto".to_owned(),
-                    tagline: "el teléfono como trackpad".to_owned(),
-                    url: "https://caguamini.triceratops-adelie.ts.net:8810".to_owned(),
-                    port: Some(8810),
-                    host: Some("mac".to_owned()),
-                    icon: "hand".to_owned(),
-                    hue: 205,
-                    category: "dev".to_owned(),
-                    private: false,
-                },
+                // trackpad: el teléfono mueve el cursor del AIR — corre en el
+                // air por naturaleza; el air no corre minimonitor-agent, así
+                // que sin port/host (sin LED), como los `ext`
+                ext("dev", "tacto", "tacto", "el teléfono como trackpad del air",
+                    "https://caguair.triceratops-adelie.ts.net:8810", "hand", 205),
                 mac("dev", "opencode-web", "opencode", "web ui", 4096, "code", 175),
                 mac("dev", "ttyd-opencode", "oc·term", "opencode tty", 7682, "term", 85),
                 // ── infra — monitoring & plumbing ────────────────────────────

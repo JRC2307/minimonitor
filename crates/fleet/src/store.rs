@@ -209,7 +209,7 @@ impl Catalog {
                 ext("instalar", "paros-app", "paros·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
                 ext("instalar", "crust-app", "crust·app", "instalar PWA · compartir → añadir",
-                    "https://caguaserver.triceratops-adelie.ts.net:8812", "strata", 18),
+                    "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
                 // ── money — the private drawer (PIN-locked below) ────────────
                 srv("money", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
                 tls("money", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
@@ -228,7 +228,7 @@ impl Catalog {
                 // proceso escuchando → `ext`, sin LED. Es PWA y se instala desde
                 // la misma URL, por eso también está en la repisa de instalar.
                 ext("life", "crust", "crust", "placas · sismos · rocas",
-                    "https://caguaserver.triceratops-adelie.ts.net:8812", "strata", 18),
+                    "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
                 // grabadora en la mini (necesita el bridge de hermes + ffmpeg
                 // locales); loopback tras `tailscale serve` → HTTPS explícito
                 StoreApp {

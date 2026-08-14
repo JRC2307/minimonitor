@@ -21,6 +21,7 @@ use crate::config::ServeConfig;
 
 pub mod hub;
 pub mod routes;
+pub mod search;
 pub mod templates;
 
 /// Default freshness window for the derived `online` field (spec §3.3), used by
@@ -77,6 +78,7 @@ pub fn build_router(db_path: PathBuf) -> Router {
         portfolio_token: None,
         money_pin: None,
         tickers: std::sync::Arc::new(crate::config::default_tickers()),
+        vault_path: PathBuf::from(crate::config::default_vault_path()),
     })
 }
 
@@ -136,6 +138,9 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         .route("/api/rss", get(routes::get_rss))
         .route("/api/quotes", get(routes::get_quotes))
         .route("/api/tickers", get(routes::get_tickers))
+        // Fleet-wide search: apps + tasks + hermes + vault, resolved
+        // server-side. Ungated like `/` and `/api/store`; never money data.
+        .route("/api/search", get(search::get_search))
         // HTML views (askama, server-rendered)
         .route("/inventory", get(routes::get_index))
         .route("/node/{id}", get(routes::get_node_html))
@@ -204,6 +209,7 @@ pub async fn run_with(
         portfolio_token: cfg.portfolio_token.clone(),
         money_pin: cfg.money_pin.clone(),
         tickers: std::sync::Arc::new(cfg.tickers.clone()),
+        vault_path: PathBuf::from(cfg.vault_path.clone()),
     });
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -783,6 +789,7 @@ mod tests {
             portfolio_token: None,
             money_pin: Some("4242".to_owned()),
             tickers: std::sync::Arc::new(crate::config::default_tickers()),
+            vault_path: PathBuf::from("/nonexistent/vault"),
         })
     }
 
@@ -1586,6 +1593,7 @@ mod tests {
             portfolio_token: None,
             money_pin: Some("4242".to_owned()),
             tickers: std::sync::Arc::new(crate::config::default_tickers()),
+            vault_path: PathBuf::from("/nonexistent/vault"),
         })
     }
 
@@ -1841,6 +1849,7 @@ mod tests {
             portfolio_token: None,
             money_pin: Some("4242".to_owned()),
             tickers: std::sync::Arc::new(crate::config::default_tickers()),
+            vault_path: PathBuf::from("/nonexistent/vault"),
         });
         let req = Request::builder()
             .uri("/hub/cuentas/auth-echo")
@@ -1881,6 +1890,7 @@ mod tests {
             portfolio_token: None,
             money_pin: None,
             tickers: std::sync::Arc::new(crate::config::default_tickers()),
+            vault_path: PathBuf::from("/nonexistent/vault"),
         });
         let req = Request::builder()
             .uri("/hub/cuentas/summary")

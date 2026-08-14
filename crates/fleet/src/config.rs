@@ -246,6 +246,12 @@ pub struct ServeConfig {
     /// PIN-gated: edit here and restart, no rebuild.
     #[serde(default = "default_tickers")]
     pub tickers: Vec<String>,
+    /// Obsidian vault root that `/api/search` greps for `*.md` notes. `~` is
+    /// expanded. Defaults to the Syncthing copy on caguaserver; on the mini
+    /// point it at `~/vaults/caguabot`. A path that does not exist simply
+    /// yields an empty `vault` group.
+    #[serde(default = "default_vault_path")]
+    pub vault_path: String,
     /// PIN gating the `/hub/cuentas/*` money proxy (header `X-Money-Pin`).
     /// Unset → the money proxy is disabled entirely (money numbers never leave
     /// the server). Server-enforced — the UI lock is only presentation.
@@ -270,6 +276,11 @@ fn default_polybot_url() -> String {
 }
 fn default_portfolio_url() -> String {
     "http://127.0.0.1:3010".to_owned()
+}
+/// Where the Obsidian vault lands on caguaserver (Syncthing target). The mini
+/// keeps its copy at `~/vaults/caguabot` — override in `fleet.toml` there.
+pub(crate) fn default_vault_path() -> String {
+    "/opt/syncthing/caguabot".to_owned()
 }
 /// Top 3 holdings by value + the market tickers worth a glance (peso, Brent).
 /// Holdings shift — re-order this list in `fleet.toml` when they do.
@@ -357,6 +368,7 @@ pub fn load_config(path: &Path) -> anyhow::Result<Config> {
         if let Some(p) = serve.service_labels_path.as_mut() {
             *p = expand_tilde(p);
         }
+        serve.vault_path = expand_tilde(&serve.vault_path);
         if let Some(p) = serve.store_path.as_mut() {
             *p = expand_tilde(p);
         }

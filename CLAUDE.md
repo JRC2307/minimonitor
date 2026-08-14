@@ -41,7 +41,10 @@ Config: `fleet.toml` ([serve] bind/store_path); catalog override template at
 ## Deploy
 caguaserver, behind Tailscale HTTPS serve:
 - rsync repo → `caguaserver:src/minimonitor/`
-- build there: `cargo build --release -p fleet -p minimonitor-agent`
+- build there: `~/.cargo/bin/cargo build --release -p fleet -p minimonitor-agent`
+  (full path: cargo is NOT on the non-interactive ssh PATH, and `ssh caguaserver
+  'cargo build ... | tail'` exits 0 anyway because tail eats the failure — verify
+  with `strings target/release/fleet | grep <new tile string>` before copying)
 - restart services: `fleet-serve` (systemd/local unit, caguastore UI) and
   `minimonitor-agent`; copy binaries to `~/.local/bin/` per the global
   caguastore-tile recipe.

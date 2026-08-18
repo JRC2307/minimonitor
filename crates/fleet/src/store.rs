@@ -256,6 +256,8 @@ impl Catalog {
                     "https://javierr.com", "sun", 260),
                 tls("negocio", "marketing", "marketing", "calendario de posts", 8811, "megaphone", 340),
                 tls("negocio", "pelon-dash", "pelón data", "mercado @pelonconlimon", 8814, "bowl", 30),
+                ext("negocio", "pelonconlimon", "pelón con limón", "guía de tacos para fans",
+                    "https://pelonconlimon.jrckc23.workers.dev", "map", 25),
                 ext("negocio", "puertacaja", "PuertaCaja", "POS + puerta QR para eventos pop-up (demo)",
                     "https://puertacaja-popup.jrckc23.workers.dev", "door", 28),
                 ext("negocio", "stay", "stay", "rental site (demo)",

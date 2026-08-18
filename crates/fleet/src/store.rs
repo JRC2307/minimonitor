@@ -229,8 +229,6 @@ impl Catalog {
                 // el poker es ocio, no trabajo — vivía en `work` sólo porque
                 // corre en la mini como los demás experimentos
                 tls("vida", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
-                ext("vida", "locals", "locals", "recomendaciones locales",
-                    "https://locals.jrckc23.workers.dev", "speech", 20),
                 // atlas geológico: `tailscale serve` sirve el directorio, no hay
                 // proceso escuchando → `ext`, sin LED. Es PWA y se instala desde
                 // la misma URL, por eso también está en la repisa de instalar.

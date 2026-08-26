@@ -203,7 +203,8 @@ impl Catalog {
                 // ── día — the four he opens every single day ─────────────────
                 // Deliberately tiny: this section is the launcher's front door,
                 // so anything that isn't a genuine daily driver belongs below.
-                tls("día", "brief", "brief", "panel del día", 8092, "sun", 15),
+                // brief/barrido lives INSIDE the store home screen since 2026-08-20
+                // (día section, /api/brief-day) — no standalone tile.
                 tls("día", "calendario", "calendario", "agenda self-hosted", 8791, "calendar", 38),
                 tls("día", "hermeshub", "hermes", "chat + command center", 8796, "speech", 275),
                 srv("día", "command-center", "backlog", "command center", 8787, "kanban", 265),
@@ -267,6 +268,8 @@ impl Catalog {
                 // ── clientes — trabajo pagado, un tile por cliente ───────────
                 ext("clientes", "pablorubin", "pablorubin", "portfolio de pintor (cliente)",
                     "https://pablorubin.com", "camera", 45),
+                ext("clientes", "rocha-procesos", "rocha procesos", "mapa de procesos · levantamiento (cliente)",
+                    "https://rocha.javierr.com", "kanban", 60),
                 ext("clientes", "oachb", "oachb", "archivo de obra · intake (cliente)",
                     "https://oachb-panel.jrckc23.workers.dev", "camera", 90),
                 ext("clientes", "microcentro", "microcentro", "POS · inventario (cliente)",
@@ -307,12 +310,14 @@ impl Catalog {
                     private: false,
                 },
                 // hermes dashboard (official web UI) on the mini — binds the
-                // tailscale IP directly so the app's own auth gate engages
+                // tailscale IP directly so the app's own auth gate engages.
+                // MagicDNS name, not the raw IP: the mini re-joined the tailnet
+                // 2026-08 with a new machine key and the hardcoded IP went stale.
                 StoreApp {
                     slug: "hermes-app".to_owned(),
                     name: "hermes·app".to_owned(),
                     tagline: "dashboard oficial".to_owned(),
-                    url: "http://100.105.239.50:9119".to_owned(),
+                    url: "http://caguamini.triceratops-adelie.ts.net:9119".to_owned(),
                     port: Some(9119),
                     host: Some("mac".to_owned()),
                     icon: "bot".to_owned(),
@@ -334,13 +339,27 @@ impl Catalog {
                     category: "dev".to_owned(),
                     private: false,
                 },
+                // noVNC sobre el Screen Sharing nativo de la mini — el visor de
+                // pantalla de respaldo cuando RustDesk falla. websockify bindea
+                // loopback :8814, fronted por tailscale serve → HTTPS explícito.
+                // (8814 también es pelón-dash en caguaserver: hosts distintos.)
+                StoreApp {
+                    slug: "pantalla".to_owned(),
+                    name: "pantalla".to_owned(),
+                    tagline: "ver la mini · noVNC".to_owned(),
+                    url: "https://caguamini.triceratops-adelie.ts.net:8814/vnc.html".to_owned(),
+                    port: Some(8814),
+                    host: Some("mac".to_owned()),
+                    icon: "app".to_owned(),
+                    hue: 190,
+                    category: "dev".to_owned(),
+                    private: false,
+                },
                 // trackpad: el teléfono mueve el cursor del AIR — corre en el
                 // air por naturaleza; el air no corre minimonitor-agent, así
                 // que sin port/host (sin LED), como los `ext`
                 ext("dev", "tacto", "tacto", "el teléfono como trackpad del air",
                     "https://caguair.triceratops-adelie.ts.net:8810", "hand", 205),
-                mac("dev", "opencode-web", "opencode", "web ui", 4096, "code", 175),
-                mac("dev", "ttyd-opencode", "oc·term", "opencode tty", 7682, "term", 85),
                 // pinpad: portapapeles compartido entre máquinas y teléfono —
                 // utilidad de trabajo, no un producto; por eso está aquí y no
                 // en `negocio` aunque viva en el dominio propio
@@ -489,7 +508,6 @@ mod tests {
             "iprep",
             "ntfy",
             "gastos",
-            "brief",
             "calendario",
             "hermeshub",
             "vitals",

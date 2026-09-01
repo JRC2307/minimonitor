@@ -269,7 +269,7 @@ impl Catalog {
                 ext("clientes", "pablorubin", "pablorubin", "portfolio de pintor (cliente)",
                     "https://pablorubin.com", "camera", 45),
                 ext("clientes", "rocha-procesos", "rocha procesos", "mapa de procesos · levantamiento (cliente)",
-                    "https://rocha.javierr.com", "kanban", 60),
+                    "https://procesos.rochaydelarosa.com", "kanban", 60),
                 ext("clientes", "oachb", "oachb", "archivo de obra · intake (cliente)",
                     "https://oachb-panel.jrckc23.workers.dev", "camera", 90),
                 ext("clientes", "microcentro", "microcentro", "POS · inventario (cliente)",

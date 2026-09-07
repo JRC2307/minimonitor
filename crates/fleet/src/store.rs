@@ -229,6 +229,7 @@ impl Catalog {
                 tls("vida", "genealogy", "genealogy", "arbol familiar", 3015, "mesh", 200),
                 // el poker es ocio, no trabajo — vivía en `work` sólo porque
                 // corre en la mini como los demás experimentos
+                tls("vida", "espresso-yourself", "Espresso Yourself", "a small coffee crisis · 3D game", 8830, "bowl", 91),
                 tls("vida", "poker-helper", "poker", "odds sidekick", 3013, "spade", 350),
                 // atlas geológico: `tailscale serve` sirve el directorio, no hay
                 // proceso escuchando → `ext`, sin LED. Es PWA y se instala desde

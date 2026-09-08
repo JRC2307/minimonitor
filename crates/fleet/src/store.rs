@@ -248,7 +248,6 @@ impl Catalog {
                 // ── dinero — the private drawer (PIN-locked below) ───────────
                 tls("dinero", "cuentas", "cuentas", "facturas & money", 8789, "coin", 45),
                 tls("dinero", "gastos", "gastos", "expense tracker", 8795, "coin", 5),
-                srv("dinero", "portfolio", "portfolio", "inversiones", 3010, "chart", 95),
                 srv("dinero", "polybot", "polybot", "tradingbot panel", 3006, "bot", 285),
                 // ── negocio — mi propia tienda: sitio, marketing y demos ─────
                 // Los demos son material de venta del negocio propio, no
@@ -398,7 +397,7 @@ impl Catalog {
         ];
         // Money-facing apps are locked by default (PIN unlock, session-scoped).
         for a in &mut apps {
-            if matches!(a.slug.as_str(), "cuentas" | "gastos" | "portfolio") {
+            if matches!(a.slug.as_str(), "cuentas" | "gastos") {
                 a.private = true;
             }
         }
@@ -524,7 +523,7 @@ mod tests {
         ];
         // https → connection refused: these have no TLS listener at all and
         // MUST stay plain HTTP.
-        const PLAIN: &[&str] = &["command-center", "polybot", "portfolio", "uptime-kuma"];
+        const PLAIN: &[&str] = &["command-center", "polybot", "uptime-kuma"];
 
         let cat = Catalog::builtin();
         let url = |slug: &str| {

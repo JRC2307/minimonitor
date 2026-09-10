@@ -255,6 +255,9 @@ impl Catalog {
                 // `clientes`.
                 ext("negocio", "javierr", "javierr.com", "portfolio + javibot",
                     "https://javierr.com", "sun", 260),
+                // public booking page (Worker); bookings land in calendario via its sync loop
+                ext("negocio", "agenda", "agenda", "reserva de llamadas · agenda.javierr.com",
+                    "https://agenda.javierr.com", "calendar", 45),
                 tls("negocio", "marketing", "marketing", "calendario de posts", 8811, "megaphone", 340),
                 tls("negocio", "pelon-dash", "pelón data", "mercado @pelonconlimon", 8814, "bowl", 30),
                 ext("negocio", "pelonconlimon", "pelón con limón", "guía de tacos para fans",

@@ -240,6 +240,7 @@ impl Catalog {
                 tls("medios", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
                 tls("medios", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
                 tls("medios", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
+                tls("medios", "escaner", "escáner", "escaneos LiDAR · modelos 3D", 8839, "mesh", 162),
                 // ── aprender — idiomas, señas, entrevistas ───────────────────
                 tls("aprender", "dilo", "dilo", "aprende idiomas", 8793, "speech", 220),
                 ext("aprender", "manos", "manos", "aprende LSM",
@@ -392,6 +393,8 @@ impl Catalog {
                     "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
                 ext("instalar", "crust-app", "crust·app", "instalar PWA · compartir → añadir",
                     "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
+                ext("instalar", "escaner-app", "escáner·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8838", "mesh", 162),
                 // ── infra — monitoring & plumbing ────────────────────────────
                 srv("infra", "uptime-kuma", "kuma", "uptime checks", 3001, "pulse", 130),
                 tls("infra", "ntfy", "ntfy", "push notifs", 8082, "bell", 320),

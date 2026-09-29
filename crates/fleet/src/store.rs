@@ -390,6 +390,8 @@ impl Catalog {
                     "https://caguaserver.triceratops-adelie.ts.net:8802", "map", 130),
                 ext("instalar", "fotos-app", "fotos·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8804", "camera", 268),
+                ext("instalar", "camara-app", "cámara·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8843", "camera", 32),
                 ext("instalar", "paros-app", "paros·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
                 ext("instalar", "crust-app", "crust·app", "instalar PWA · compartir → añadir",

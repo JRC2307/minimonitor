@@ -223,6 +223,7 @@ impl Catalog {
                 // así que "lo mío, fuera del trabajo" se queda como un solo
                 // lugar en vez de partirse en tres subsecciones cosméticas.
                 tls("vida", "mapas", "mapas", "mis lugares · sin google", 8799, "map", 130),
+                tls("vida", "gasto-publico", "gasto público", "contratos y gasto por estado", 8844, "chart", 85),
                 tls("vida", "vuelos", "vuelos", "flight tracker", 8792, "plane", 225),
                 tls("vida", "comida", "comida", "log · despensa · menús", 8806, "bowl", 90),
                 tls("vida", "depas", "depas", "depas CDMX", 8794, "house", 160),

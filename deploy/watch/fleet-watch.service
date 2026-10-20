@@ -1,0 +1,10 @@
+[Unit]
+Description=fleet-watch (service, disk, backup and WhatsApp-watchdog checks -> cagua-push)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=caguamonday
+EnvironmentFile=/etc/cagua-push.env
+ExecStart=/usr/bin/python3 /home/caguamonday/.local/bin/fleet-watch.py
+TimeoutStartSec=120

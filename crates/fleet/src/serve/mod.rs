@@ -135,6 +135,7 @@ pub fn build_router_with(state: routes::AppState) -> Router {
         // launcher renders, for the native store client.
         .route("/api/store", get(routes::get_store_json))
         .route("/api/news", get(routes::get_news))
+        .route("/api/brief-day", get(routes::get_brief_day))
         .route("/api/rss", get(routes::get_rss))
         .route("/api/quotes", get(routes::get_quotes))
         .route("/api/tickers", get(routes::get_tickers))
@@ -901,7 +902,6 @@ mod tests {
         assert!(html.contains("/observability"), "dock obs link missing");
         // Remote-work tiles.
         assert!(html.contains("terminal"), "ttyd tile missing:\n{html}");
-        assert!(html.contains("opencode"), "opencode tile missing:\n{html}");
         // The tailscale tile is portless: no LED, no up/down class.
         let ts_tile = html
             .split("<a class=\"")

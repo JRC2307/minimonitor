@@ -421,6 +421,38 @@ fn xml_tag<'a>(frag: &'a str, tag: &str) -> Option<&'a str> {
 }
 
 /// Headlines, cached ~10 min so a fleet of phone opens doesn't hammer the feed.
+/// `GET /api/brief-day` — the daily barrido brief, consolidated into the store
+/// home screen (was the standalone :8092 page). Serves the JSON that
+/// wa-daily-sweep already publishes; the browser can't fetch :8092 cross-origin.
+pub async fn get_brief_day() -> Response {
+    let candidates = [
+        PathBuf::from("/opt/hermes-brief/brief.json"),
+        dirs_home().join(".hermes/whatsapp/brief.json"),
+    ];
+    for p in candidates {
+        if let Ok(body) = tokio::fs::read_to_string(&p).await {
+            return (
+                [
+                    (axum::http::header::CONTENT_TYPE, "application/json"),
+                    (axum::http::header::CACHE_CONTROL, "max-age=120"),
+                ],
+                body,
+            )
+                .into_response();
+        }
+    }
+    (
+        StatusCode::NOT_FOUND,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        r#"{"error":"brief.json not found"}"#,
+    )
+        .into_response()
+}
+
+fn dirs_home() -> PathBuf {
+    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+}
+
 static NEWS_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<(std::time::Instant, String)>>> =
     std::sync::OnceLock::new();
 
@@ -503,7 +535,10 @@ fn encode_symbol(sym: &str) -> String {
 async fn fetch_quote(http: reqwest::Client, symbol: String) -> Option<serde_json::Value> {
     let path = encode_symbol(&symbol);
     let url =
-        format!("https://query1.finance.yahoo.com/v8/finance/chart/{path}?interval=1d&range=2d");
+        // range=1d: with 2d, chartPreviousClose is the close before the range
+        // START (two sessions ago), which doubled every change % (owner bug
+        // report 2026-08-21). 1d makes it the actual previous session close.
+        format!("https://query1.finance.yahoo.com/v8/finance/chart/{path}?interval=1d&range=1d");
     let resp = http
         .get(&url)
         .header(axum::http::header::USER_AGENT.as_str(), "Mozilla/5.0")

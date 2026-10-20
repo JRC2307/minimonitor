@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="stylesheet" href="/static/store.css?v=12">
+  <link rel="stylesheet" href="/static/store.css?v=13">
 </head>
 <body class="store">
   <div class="grain" aria-hidden="true"></div>
@@ -71,6 +71,13 @@
           <div class="fold-body pulse-list" id="pulse-list"></div>
         </section>
 
+        <!-- día — the daily barrido brief, consolidated from the old :8092 page -->
+        <section class="dia wg-fold" id="dia" data-fold="dia" hidden aria-label="brief del día">
+          <h2 class="sec-head"><span>día</span><span class="fold-n" id="dia-stamp"></span>
+            <button type="button" class="fold-btn" data-fold-btn="dia" aria-label="collapse"></button></h2>
+          <div class="fold-body dia-body" id="dia-body"></div>
+        </section>
+
         <section class="wgrid" id="widgets" aria-label="widgets">
           <a class="wg wg-heart wg-fold" id="w-heart" data-fold="heart" style="--h:355" href="https://caguaserver.triceratops-adelie.ts.net:3016" hidden>
             <span class="heart-left">
@@ -118,7 +125,7 @@
               <span class="wg-s" id="w-whats-s">whatsapp</span>
             </span>
           </a>
-          <a class="wg wg-chip" id="w-wx" style="--h:205" href="https://caguaserver.triceratops-adelie.ts.net:8092" hidden>
+          <a class="wg wg-chip" id="w-wx" style="--h:205" href="#inicio" hidden>
             <span class="chip-ico"><svg viewBox="0 0 24 24"><use id="w-wx-icon" href="#i-sun" xlink:href="#i-sun"/></svg></span>
             <span class="chip-tx">
               <span class="wg-v" id="w-wx-v">—</span>
@@ -156,7 +163,7 @@
             <span class="mkt" id="w-tickers-list"></span>
             <span class="wg-s" id="w-tickers-s">&nbsp;</span>
           </a>
-          <a class="wg wg-strip" id="w-fx" style="--h:170" href="https://caguaserver.triceratops-adelie.ts.net:8092" hidden>
+          <a class="wg wg-strip" id="w-fx" style="--h:170" href="#inicio" hidden>
             <span class="wg-k"><svg viewBox="0 0 24 24"><use href="#i-coin" xlink:href="#i-coin"/></svg>peso</span>
             <span class="fx-rates" id="w-fx-t"></span>
           </a>
@@ -316,6 +323,6 @@
     <button type="submit" class="pin-go" id="pin-go">unlock</button>
   </form>
 
-  <script src="/static/store.js?v=13" defer></script>
+  <script src="/static/store.js?v=14" defer></script>
 </body>
 </html>

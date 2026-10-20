@@ -380,6 +380,58 @@
     });
   });
 
+  // ── día — the daily barrido brief, consolidated from the old :8092 page ────
+  // Renders the essentials of brief.json (agenda, board focus, propuestas,
+  // correo, spend) right on the home screen. Quiet when the file is missing.
+  var dia = document.getElementById('dia');
+  var diaBody = document.getElementById('dia-body');
+  function diaRow(k, main, sub) {
+    return '<div class="dia-it"><span class="dia-k">' + esc(k) + '</span>' +
+      '<span class="dia-tx">' + main +
+      (sub ? '<span class="dia-sub">' + sub + '</span>' : '') + '</span></div>';
+  }
+  function hhmm(iso) {
+    var m = /T(\d{2}:\d{2})/.exec(iso || '');
+    return m ? m[1] : '';
+  }
+  function loadDia() {
+    return fetch('/api/brief-day').then(function (r) {
+      if (!r.ok) throw new Error('no brief');
+      return r.json();
+    }).then(function (b) {
+      var rows = [];
+      var today = new Date().toISOString().slice(0, 10);
+      var ag = (b.agenda || []).filter(function (e) {
+        return (e.start || '').slice(0, 10) === today;
+      }).slice(0, 4);
+      ag.forEach(function (e) {
+        rows.push(diaRow(e.allDay ? '·' : hhmm(e.start), esc(e.summary || '')));
+      });
+      ((b.board_focus || {}).items || []).slice(0, 3).forEach(function (t) {
+        rows.push(diaRow('#' + (t.number || ''), esc(t.title || ''), esc(t.meta || '')));
+      });
+      (b.proposals || []).slice(0, 2).forEach(function (p) {
+        rows.push(diaRow('◇', esc((p.chat ? p.chat + ' · ' : '') + (p.title || ''))));
+      });
+      var em = b.email || {};
+      if (em.total_new) {
+        var tops = (em.items || []).slice(0, 2).map(function (m) {
+          return esc((m.from || '').replace(/<.*/, '').trim() + ' — ' + (m.subject || ''));
+        }).join('<br>');
+        rows.push(diaRow('✉', esc(String(em.total_new)) + ' nuevos', tops));
+      }
+      if (b.spend && b.spend.remaining != null) {
+        rows.push(diaRow('$', 'créditos restantes: ' + esc(String(b.spend.remaining))));
+      }
+      diaBody.innerHTML = rows.join('');
+      var stamp = (b.generated_at || '').slice(11, 16);
+      document.getElementById('dia-stamp').textContent = stamp;
+      dia.hidden = !rows.length || !!q.value;
+    }).catch(function () { dia.hidden = true; });
+  }
+  loadDia();
+  setInterval(loadDia, 300000);
+
   // ── correo / whatsapp widgets — parsed from the sweep bots' hub posts ──────
   // correo channel: "🔴" marks mails needing a reply (fallback: "📧 N nuevos");
   // pulso channel: "💬 N chat(s) esperan respuesta".

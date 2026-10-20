@@ -509,6 +509,36 @@ a.ask-open:hover { color: var(--fg); }
   background: linear-gradient(90deg, var(--line), transparent);
 }
 
+/* ── día — the daily brief, consolidated from the old :8092 barrido page ──── */
+
+.dia { margin-bottom: 1.35rem; }
+.dia-body {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 0.95rem;
+  background: #ffffff04;
+  overflow: hidden;
+}
+.dia-it {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75em;
+  padding: 0.55em 0.95em;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.86rem;
+}
+.dia-it:last-child { border-bottom: 0; }
+.dia-k {
+  flex: none;
+  min-width: 2.6em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+}
+.dia-tx { min-width: 0; overflow-wrap: anywhere; }
+.dia-sub { display: block; color: var(--muted); font-size: 0.78rem; }
+
 /* ── pulse — consolidated notifications ───────────────────────────────────── */
 
 .pulse { margin-bottom: 1.35rem; }

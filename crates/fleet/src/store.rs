@@ -237,6 +237,10 @@ impl Catalog {
                 // la misma URL, por eso también está en la repisa de instalar.
                 ext("vida", "crust", "crust", "placas · sismos · rocas",
                     "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
+                // fractales: WebGL, renders on the visitor's GPU; `tailscale serve`
+                // serves the folder (no process, so `ext`, no LED), like crust.
+                ext("vida", "fractales", "fractales", "mandelbrot · zoom profundo",
+                    "https://caguaserver.triceratops-adelie.ts.net:8847", "sun", 210),
                 // ── medios — la biblioteca personal ──────────────────────────
                 tls("medios", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
                 tls("medios", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
@@ -397,6 +401,8 @@ impl Catalog {
                     "https://caguaserver.triceratops-adelie.ts.net:8805", "mountain", 100),
                 ext("instalar", "crust-app", "crust·app", "instalar PWA · compartir → añadir",
                     "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
+                ext("instalar", "fractales-app", "fractales·app", "instalar PWA · compartir → añadir",
+                    "https://caguaserver.triceratops-adelie.ts.net:8847", "sun", 210),
                 ext("instalar", "escaner-app", "escáner·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8838", "mesh", 162),
                 // ── infra — monitoring & plumbing ────────────────────────────

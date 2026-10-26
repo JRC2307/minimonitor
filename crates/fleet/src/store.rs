@@ -244,6 +244,7 @@ impl Catalog {
                 // ── medios — la biblioteca personal ──────────────────────────
                 tls("medios", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
                 tls("medios", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
+                tls("medios", "cine", "cine", "watchlist · películas pendientes", 8848, "film", 340),
                 tls("medios", "fotos", "fotos", "archivo curado · originales", 8800, "camera", 268),
                 tls("medios", "escaner", "escáner", "escaneos LiDAR · modelos 3D", 8839, "mesh", 162),
                 tls("medios", "camara", "cámara", "WX800 → fotos por Wi-Fi", 8842, "camera", 32),
@@ -403,6 +404,8 @@ impl Catalog {
                     "https://caguaserver.triceratops-adelie.ts.net:8813", "strata", 18),
                 ext("instalar", "fractales-app", "fractales·app", "instalar PWA · compartir → añadir",
                     "https://caguaserver.triceratops-adelie.ts.net:8847", "sun", 210),
+                ext("instalar", "cine-app", "cine·app", "instalar PWA · compartir → añadir",
+                    "https://caguaserver.triceratops-adelie.ts.net:8848", "film", 340),
                 ext("instalar", "escaner-app", "escáner·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8838", "mesh", 162),
                 // ── infra — monitoring & plumbing ────────────────────────────

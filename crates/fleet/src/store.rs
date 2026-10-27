@@ -279,6 +279,8 @@ impl Catalog {
                 // ── clientes — trabajo pagado, un tile por cliente ───────────
                 ext("clientes", "pablorubin", "pablorubin", "portfolio de pintor (cliente)",
                     "https://pablorubin.com", "camera", 45),
+                ext("clientes", "mariellemunguia", "marielle munguía", "coming soon (cliente)",
+                    "https://mariellemunguia.com", "camera", 330),
                 ext("clientes", "rocha-procesos", "rocha procesos", "mapa de procesos · levantamiento (cliente)",
                     "https://procesos.rochaydelarosa.com", "kanban", 60),
                 ext("clientes", "oachb", "oachb", "archivo de obra · intake (cliente)",

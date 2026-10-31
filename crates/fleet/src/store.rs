@@ -245,6 +245,8 @@ impl Catalog {
                 ext("vida", "fractales", "fractales", "mandelbrot · zoom profundo",
                     "https://caguaserver.triceratops-adelie.ts.net:8847", "sun", 210),
                 // ── medios — la biblioteca personal ──────────────────────────
+                // señal: noticias rankeadas por IA (sustituye a Twitter) + avisos inteligentes
+                tls("medios", "senal", "señal", "noticias filtradas por IA · avisos", 8853, "megaphone", 28),
                 tls("medios", "musica", "musica", "streaming · navidrome", 4533, "music", 300),
                 tls("medios", "feishin", "musica·pro", "vista tipo iTunes · playlists", 4534, "music", 320),
                 tls("medios", "cine", "cine", "watchlist · películas pendientes", 8848, "film", 340),

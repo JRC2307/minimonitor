@@ -401,6 +401,8 @@ impl Catalog {
                     "https://caguaserver.triceratops-adelie.ts.net:8802", "map", 130),
                 ext("instalar", "fotos-app", "fotos·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8804", "camera", 268),
+                ext("instalar", "senal-app", "señal·app", "instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8853/install/", "megaphone", 28),
                 ext("instalar", "camara-app", "cámara·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8843", "camera", 32),
                 ext("instalar", "paros-app", "paros·app", "instalar en iPhone",

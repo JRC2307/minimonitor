@@ -275,8 +275,6 @@ impl Catalog {
                 tls("negocio", "pelon-dash", "pelón data", "mercado @pelonconlimon", 8814, "bowl", 30),
                 ext("negocio", "pelonconlimon", "pelón con limón", "guía de tacos para fans",
                     "https://pelonconlimon.jrckc23.workers.dev", "map", 25),
-                ext("negocio", "puertacaja", "PuertaCaja", "POS + puerta QR para eventos pop-up (demo)",
-                    "https://puertacaja-popup.jrckc23.workers.dev", "door", 28),
                 ext("negocio", "stay", "stay", "rental site (demo)",
                     "https://stay.javierr.com", "house", 185),
                 ext("negocio", "abogados-demo", "abogados·demo", "IA para despachos · PIN 12345",
@@ -452,27 +450,6 @@ mod tests {
         let before = slugs.len();
         slugs.dedup();
         assert_eq!(before, slugs.len(), "duplicate slugs in builtin catalog");
-    }
-
-    #[test]
-    fn puertacaja_is_a_public_portless_app() {
-        let cat = Catalog::builtin();
-        let app = cat
-            .apps
-            .iter()
-            .find(|a| a.slug == "puertacaja")
-            .expect("PuertaCaja must be in the builtin catalog");
-
-        assert_eq!(app.name, "PuertaCaja");
-        assert_eq!(
-            app.url,
-            "https://puertacaja-popup.jrckc23.workers.dev"
-        );
-        assert_eq!(app.category, "negocio");
-        assert_eq!(app.icon, "door");
-        assert_eq!(app.port, None);
-        assert_eq!(app.host, None);
-        assert!(!app.private);
     }
 
     /// The launcher derives a section's position from its **first** tile, so a

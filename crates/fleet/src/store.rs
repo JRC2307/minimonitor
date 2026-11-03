@@ -395,6 +395,8 @@ impl Catalog {
                     "https://caguaserver.triceratops-adelie.ts.net:8803", "pulse", 350),
                 ext("instalar", "brujula-app", "brújula·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8812", "compass", 10),
+                ext("instalar", "foco-app", "foco·app", "examen de vista · instalar en iPhone",
+                    "https://caguaserver.triceratops-adelie.ts.net:8854", "gauge", 205),
                 ext("instalar", "crux-app", "crux·app", "instalar en iPhone",
                     "https://caguaserver.triceratops-adelie.ts.net:8801", "hold", 25),
                 ext("instalar", "mapas-app", "mapas·app", "instalar en iPhone",

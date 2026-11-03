@@ -38,6 +38,9 @@ HTTP = {
     'hermeshub': ('http://127.0.0.1:8796/health', {200}),
     'cagua-push': ('http://127.0.0.1:8812/health', {200}),
     'caguastore': ('http://127.0.0.1:8099/', {200}),
+    'joyas': ('http://127.0.0.1:8840/healthz', {200}),
+    # through the Cloudflare tunnel, the door the collector actually uses
+    'joyas-publico': ('https://joyas.javierr.com/healthz', {200}),
 }
 TCP = {
     'soft-serve': ('127.0.0.1', 23231),

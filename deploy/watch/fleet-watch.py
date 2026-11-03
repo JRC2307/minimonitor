@@ -56,7 +56,9 @@ MINI_HEARTBEAT_MAX_MIN = 15
 
 def http_ok(url, codes):
     try:
-        with urllib.request.urlopen(url, timeout=8) as r:
+        # Cloudflare answers 403 to the default Python-urllib agent
+        req = urllib.request.Request(url, headers={'User-Agent': 'fleet-watch/1.0'})
+        with urllib.request.urlopen(req, timeout=8) as r:
             code = r.status
     except urllib.error.HTTPError as e:
         code = e.code

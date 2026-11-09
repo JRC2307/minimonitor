@@ -288,6 +288,8 @@ impl Catalog {
                     "https://procesos.rochaydelarosa.com", "kanban", 60),
                 ext("clientes", "oachb", "oachb", "archivo de obra · intake (cliente)",
                     "https://oachb-panel.jrckc23.workers.dev", "camera", 90),
+                ext("clientes", "facturero", "facturero", "recordatorios de facturas · contadora",
+                    "https://facturero.javierr.com", "kanban", 95),
                 ext("clientes", "microcentro", "microcentro", "POS · inventario (cliente)",
                     "https://microcentro-web.jrckc23.workers.dev", "kanban", 145),
                 ext("clientes", "roners", "roners", "planes de rodaje · bodega · radios",

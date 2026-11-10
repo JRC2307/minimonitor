@@ -422,6 +422,7 @@ impl Catalog {
                 // ── infra — monitoring & plumbing ────────────────────────────
                 srv("infra", "uptime-kuma", "kuma", "uptime checks", 3001, "pulse", 130),
                 tls("infra", "ntfy", "ntfy", "push notifs", 8082, "bell", 320),
+                tls("infra", "adguard", "dns", "AdGuard: quién llama a casa (TV)", 8857, "mesh", 150),
                 ext("infra", "tailscale", "tailscale", "tailnet admin",
                     "https://login.tailscale.com/admin/machines", "mesh", 200),
         ];

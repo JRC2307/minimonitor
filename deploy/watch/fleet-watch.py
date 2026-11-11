@@ -85,6 +85,20 @@ def disk(path, limit):
     return pct < limit, f'{pct}% usado'
 
 
+def fstab_mounted(path):
+    """An fstab entry for `path` that is not mounted (nofail hides it at boot)."""
+    try:
+        with open('/etc/fstab') as f:
+            wanted = any(len(c) > 1 and c[1] == path for c in
+                         (line.split() for line in f if not line.lstrip().startswith('#')))
+    except OSError:
+        return True, 'fstab ilegible'
+    if not wanted:
+        return True, 'sin entrada en fstab'
+    ok = os.path.ismount(path)
+    return ok, 'montado' if ok else 'en fstab pero NO montado'
+
+
 def backup_fresh():
     files = glob.glob(BACKUP_GLOB)
     if not files:
@@ -113,6 +127,7 @@ def run_checks():
     results['systemd'] = failed_units()
     for path, limit in DISKS.items():
         results[f'disco {path}'] = disk(path, limit)
+    results['montaje /data'] = fstab_mounted('/data')
     results['respaldo semanal'] = backup_fresh()
     if results['mini-ssh'][0]:
         results['whatsapp watchdog'] = mini_heartbeat()
